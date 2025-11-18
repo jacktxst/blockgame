@@ -1,4 +1,4 @@
-gcc graphics.c input.c main.c math.c player.c world.c -o jlewcraft \
+gcc graphics.c input.c main.c math.c player.c world.c -o blockgame \
     -I/opt/homebrew/include \
     -L/opt/homebrew/lib \
     -lglfw -lGLEW \

@@ -27,6 +27,8 @@ pixel-art editor widget provided by the
 custom gui library and can immediately see 
 the change in the affected blocks.
 
+![A screenshot of the program that shows the user editing the texture of a block](/screenshot.png)
+
 ### List of Features
 
 - Custom reusable single-header-only immediate mode gui library 
