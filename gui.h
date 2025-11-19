@@ -6,7 +6,6 @@
 // I'm pretty happy with this.
 
 
-
 // Pure immediate mode GUI system
 // Current features
 //   drawText
@@ -486,49 +485,60 @@ struct guictx {
   int * keys; // glfw keys
 };
 
-void textfield(struct guictx * ctx, int x, int y, char * str, char ** buffer, unsigned * cursorPos, int * focused, char * tooltip) {
+typedef struct  {
+  char * buffer;
+  int cursorPos;
+  int focused;
+} textfield_t;
+
+// textfield_t ipAddrTextfield = {0}
+// textfield(&ctx, &ipAddrTextfield, 600, 400, "ip", "ok");
+//textfield(&ctx, 600, 400,"ip", &ipBuffer, &cursorPos, &focused, "ok");
+
+void textfield(struct guictx * ctx, textfield_t * tf, int x, int y, char * str, int maxLength, char * tooltip) {
   static int wasMouseClicked = 0;
-  if (!*buffer) {
-    *buffer = (char *) malloc(strlen(str) + 1);
-    strcpy(*buffer, str);
+  if (!tf->buffer) {
+    tf->buffer = (char *) malloc(strlen(str) + 1);
+    strcpy(tf->buffer, str);
   }
-  drawText(*buffer, x, y, ctx->scrw, ctx->scrh, ctx->sclX, ctx->sclY);
-  drawRect(x + (*cursorPos * CHAR_W * ctx->sclX), y, 1*ctx->sclX, CHAR_H*ctx->sclY, ctx->scrw, ctx->scrh, 0xFFFFFFFF);
-  if (*focused && ctx->typedChar) { 
-    unsigned length = strlen(*buffer); 
-    *buffer = (char *) realloc(*buffer, length + 2); 
-    memmove(*buffer + *cursorPos + 1, *buffer + *cursorPos, length + 1 - *cursorPos);
-    (*buffer)[*cursorPos] = ctx->typedChar;
-    *cursorPos = *cursorPos + 1;
+  drawText(tf->buffer, x, y, ctx->scrw, ctx->scrh, ctx->sclX, ctx->sclY);
+  drawRect(x + (tf->cursorPos * CHAR_W * ctx->sclX), y, 1*ctx->sclX, CHAR_H*ctx->sclY, ctx->scrw, ctx->scrh, 0xFFFFFFFF);
+  if (tf->focused && ctx->typedChar) { 
+    unsigned length = strlen(tf->buffer);
+    if (maxLength < 0 ? 0 : length == maxLength) return;
+    tf->buffer = (char *) realloc(tf->buffer, length + 2); 
+    memmove(tf->buffer + tf->cursorPos + 1, tf->buffer + tf->cursorPos, length + 1 - tf->cursorPos);
+    (tf->buffer)[tf->cursorPos] = ctx->typedChar;
+    tf->cursorPos = tf->cursorPos + 1;
   }
-  if (*focused && ctx->keys[GLFW_KEY_RIGHT] && *cursorPos < strlen(*buffer)) {
-    *cursorPos += 1;
+  if (tf->focused  && ctx->keys[GLFW_KEY_RIGHT] && tf->cursorPos < strlen(tf->buffer) && tf->cursorPos < maxLength ) {
+    tf->cursorPos += 1;
     ctx->keys[GLFW_KEY_RIGHT] = 0;
   } 
-  if (*focused && ctx->keys[GLFW_KEY_LEFT] && *cursorPos > 0) {
-    *cursorPos -= 1;
+  if (tf->focused && ctx->keys[GLFW_KEY_LEFT] && tf->cursorPos > 0) {
+    tf->cursorPos -= 1;
     ctx->keys[GLFW_KEY_LEFT] = 0;
   }
-  if (*focused && ctx->keys[GLFW_KEY_BACKSPACE] && *cursorPos > 0) {
-    *cursorPos -= 1;
+  if (tf->focused && ctx->keys[GLFW_KEY_BACKSPACE] && tf->cursorPos > 0) {
+    tf->cursorPos -= 1;
     ctx->keys[GLFW_KEY_BACKSPACE] = 0;
-    unsigned length = strlen(*buffer);
-    memmove(*buffer + *cursorPos, *buffer + *cursorPos + 1, length - *cursorPos);
-    *buffer = (char *) realloc(*buffer, length);
+    unsigned length = strlen(tf->buffer);
+    memmove(tf->buffer + tf->cursorPos, tf->buffer + tf->cursorPos + 1, length - tf->cursorPos);
+    tf->buffer = (char *) realloc(tf->buffer, length);
   }
-  if (x < ctx->mx && ctx->mx < x+(1+strlen(*buffer))*CHAR_W*ctx->sclX && y < ctx->my && ctx->my < y+CHAR_H*ctx->sclY) {
+  if (x < ctx->mx && ctx->mx < x+(1+strlen(tf->buffer))*CHAR_W*ctx->sclX && y < ctx->my && ctx->my < y+CHAR_H*ctx->sclY) {
     drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
     if (ctx->mb && !wasMouseClicked) {
-      *focused = 1;
-      *cursorPos = (ctx->mx - x) / (CHAR_W * ctx->sclX);
-      int len = strlen(*buffer);
-      if (*cursorPos > len) {
-        *cursorPos = len;
+      tf->focused = 1;
+      tf->cursorPos = (ctx->mx - x) / (CHAR_W * ctx->sclX);
+      int len = strlen(tf->buffer);
+      if (tf->cursorPos > len) {
+        tf->cursorPos = len;
       }
     }
     wasMouseClicked = 0;
     if (ctx->mb) wasMouseClicked = 1;
-  } else if (ctx->mb && !wasMouseClicked) {*focused = 0;}
+  } else if (ctx->mb && !wasMouseClicked) {tf->focused  = 0;}
 }
 
 void slider(struct guictx * ctx, int x, int y, double * value, float min, float max, char * tooltip) {

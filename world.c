@@ -329,53 +329,39 @@ int voxelRaycastPlace(
 }
 
 void drawWorld(struct world w, fvec3 pos, int dh, int dv) {
-    //printf("drawing world\n");
-    ivec3 chunkPos = (ivec3){floor((double)pos.x/CHUNK_SIZE), floor((double)pos.y/CHUNK_SIZE), floor((double)pos.z/CHUNK_SIZE)};
-    for (int x = chunkPos.x - dh; x <= chunkPos.x + dh; x++) {
-      for (int y = chunkPos.y - dv; y <= chunkPos.y + dv; y++) {
-        for (int z = chunkPos.z - dh; z <= chunkPos.z + dh; z++) {
-          //printf("attempting to draw chunk %d %d %d\n", x, y, z);
-          int regionX = floor((double)x/REGION_SIZE);
-          int regionY = floor((double)y/REGION_SIZE);
-          int regionZ = floor((double)z/REGION_SIZE);
-          ivec3 chunkPosInRegion = (ivec3){mod(x, REGION_SIZE), mod(y, REGION_SIZE), mod(z, REGION_SIZE)};
-
-          struct region * checkRegion = w.loadedRegions;
-          //printf("searching for region %d %d %d\n", regionX, regionY, regionZ);
-          while (checkRegion) {
-            
-            if (regionX != checkRegion->x || regionY != checkRegion->y || regionZ != checkRegion->z) {
-              checkRegion = checkRegion->next;
+  ivec3 chunkPos = (ivec3){floor((double)pos.x/CHUNK_SIZE), floor((double)pos.y/CHUNK_SIZE), floor((double)pos.z/CHUNK_SIZE)};
+  for (int x = chunkPos.x - dh; x <= chunkPos.x + dh; x++) {
+    for (int y = chunkPos.y - dv; y <= chunkPos.y + dv; y++) {
+      for (int z = chunkPos.z - dh; z <= chunkPos.z + dh; z++) {
+        int regionX = floor((double)x/REGION_SIZE);
+        int regionY = floor((double)y/REGION_SIZE);
+        int regionZ = floor((double)z/REGION_SIZE);
+        ivec3 chunkPosInRegion = (ivec3){mod(x, REGION_SIZE), mod(y, REGION_SIZE), mod(z, REGION_SIZE)};
+        struct region * checkRegion = w.loadedRegions;
+        while (checkRegion) {
+          if (regionX != checkRegion->x || regionY != checkRegion->y || regionZ != checkRegion->z) {
+            checkRegion = checkRegion->next;
+            continue;
+          }
+          struct chunk * checkChunk = checkRegion->chunks;
+          while (checkChunk) {
+            if (chunkPosInRegion.x != checkChunk->x || chunkPosInRegion.y != checkChunk->y || chunkPosInRegion.z != checkChunk->z) {
+              checkChunk = checkChunk->next;
               continue;
             }
-            //printf("found region %d %d %d!\n", checkRegion->x, checkRegion->y, checkRegion->z);
-            struct chunk * checkChunk = checkRegion->chunks;
-            //printf("looking for chunk %d %d %d in region\n", chunkPosInRegion.x, chunkPosInRegion.y, chunkPosInRegion.z);
-            
-            while (checkChunk) {
-              if (chunkPosInRegion.x != checkChunk->x || chunkPosInRegion.y != checkChunk->y || chunkPosInRegion.z != checkChunk->z) {
-                //printf("wrong chunk: %d %d %d\n", checkChunk->x, checkChunk->y, checkChunk->z);
-                checkChunk = checkChunk->next;
-                continue;
-              }
-              //printf("FOUND A CHUNK FINALLY %d %d %d\n", checkChunk->x, checkChunk->y, checkChunk->z);
-              //printf("using program %d to render world chunk %d %d %d vao %d icount %d\n", w.shaderProgram, x, y, z, checkChunk->vao, checkChunk->icount);
-              glUseProgram(w.shaderProgram);
-              unsigned modelUniformLoc = glGetUniformLocation(w.shaderProgram, "model");
-              mat4 model; mat4Translate(model, x * CHUNK_SIZE, y * CHUNK_SIZE, z * CHUNK_SIZE); 
-              glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
-              glBindVertexArray(checkChunk->vao);
-              glActiveTexture(GL_TEXTURE0);
-              glBindTexture(GL_TEXTURE_2D_ARRAY, w.tex);
-              glDrawElements(GL_TRIANGLES, checkChunk->icount, GL_UNSIGNED_INT, 0);
-              glBindVertexArray(0);
-              break;
-            }
-            //printf("break\n");
+            unsigned modelUniformLoc = glGetUniformLocation(w.shaderProgram, "model");
+            mat4 model; mat4Translate(model, x * CHUNK_SIZE, y * CHUNK_SIZE, z * CHUNK_SIZE); 
+            glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
+            glBindVertexArray(checkChunk->vao);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, w.tex);
+            glDrawElements(GL_TRIANGLES, checkChunk->icount, GL_UNSIGNED_INT, 0);
+            glBindVertexArray(0);
             break;
           }
+          break;
         }
       }
     }
-    return;
+  }
 };

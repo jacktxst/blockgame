@@ -12,13 +12,7 @@ static void key_cb(GLFWwindow* w, int key, int scancode, int action, int mods) {
 
     if (key >= 0 && key <= GLFW_KEY_LAST) {
         gInput.keys[key] = (action != GLFW_RELEASE);
-        if (action == GLFW_RELEASE) return;
-
-        player.onKey(key, action);
         
-        switch (key) {
-            
-        }
     }
 }
 

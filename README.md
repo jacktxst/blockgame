@@ -42,6 +42,7 @@ the change in the affected blocks.
 
 ### Limitations and Problems
 
+- Camera bobbing effect is constant and annoying
 - Currently, only 256 block types are available.
 - The world can not yet be saved or loaded
 - The world is limited in size, however the engine is capable of more already
@@ -53,6 +54,8 @@ the change in the affected blocks.
 ### Future Plans
 
 - Infinite world
+- Multithreading support
+  - Create a thread pool
 - Documentation
 - Level saving and loading
 - Dynamic audio system

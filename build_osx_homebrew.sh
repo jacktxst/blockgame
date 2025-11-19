@@ -1,4 +1,4 @@
-gcc graphics.c input.c main.c math.c player.c world.c -o blockgame \
+gcc graphics.c input.c main.c math.c -o blockgame \
     -I/opt/homebrew/include \
     -L/opt/homebrew/lib \
     -lglfw -lGLEW \
@@ -6,3 +6,5 @@ gcc graphics.c input.c main.c math.c player.c world.c -o blockgame \
     -framework Cocoa \
     -framework IOKit \
     -framework CoreVideo
+read -p "continue?"    
+./blockgame

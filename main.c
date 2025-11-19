@@ -5,25 +5,14 @@
 #include <GLFW/glfw3.h>
 #include <math.h>
 
-#include "tgui/tgui.h"
 #include "main.h"
 #include "gui.h"
 
-
-static uint32_t pixels[WIDTH * HEIGHT];
-
-static GLuint textureAtlas;
-
-static GLuint vao;
-
-unsigned char blockType = 1; // global
-
-
-
 int fb_width, fb_height;
-int guiEnabled = 0;
-struct world world;
-player_t player;
+
+typedef enum {SERVER_INTERNAL, SERVER_EXTERNAL} servertype;
+struct server { servertype serverType; struct world * world; };
+struct client { struct world * world; servertype serverType; };
 
 int main(void) {
     /* lib init */
@@ -40,53 +29,138 @@ int main(void) {
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) { fprintf(stderr, "failed to init glew\n"); return -1; }
 
-    /* compile + link shaders */
-    GLuint prog =               shaderProgram("shaders/vertex.glsl","shaders/fragment.glsl");
-    GLuint worldshader =        shaderProgram("shaders/world.vert", "shaders/world.frag");
-    GLuint crosshairShader =    shaderProgram("shaders/crosshair.vert", "shaders/crosshair.frag");
-
-    /* input */
+    /* setup input */
     inputInit(window);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     if (glfwRawMouseMotionSupported()) {
         glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }
     
-    /* create texture */
-    glGenTextures(1, &textureAtlas);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, textureAtlas);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    unsigned framecount = 0;
+    /* main menu */
+  while (!glfwWindowShouldClose(window)) {
+    gInput.mouseDeltaX = 0.0;
+    gInput.mouseDeltaY = 0.0;
+    gInput.scrollY = 0.0;
+    glfwGetFramebufferSize(window, &fb_width, &fb_height);
+    glViewport(0, 0, fb_width, fb_height);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+    glfwPollEvents();
+      
+    struct guictx ctx = {
+      .scrw = fb_width,
+      .scrh = fb_height,
+      .mx = gInput.mouseX * 2 ,
+      .my = gInput.mouseY * 2 ,
+      .mb = gInput.mouseButtons[GLFW_MOUSE_BUTTON_LEFT],
+      .typedChar =  gInput.typedChar,
+      .sclX = 8,
+      .sclY = 16,
+      .keys = gInput.keys };
+    //drawText("test",0,0,fb_width,fb_height,8,16);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glPolygonMode(GL_FRONT_AND_BACK,  GL_FILL);
 
-    // matrices
-    
-    mat4 proj; mat4Proj(proj, 1.5707963f, (float)WIDTH / (float)HEIGHT, 0.1f, 2048.0f);
-    glUseProgram(prog);        glUniformMatrix4fv(glGetUniformLocation(prog,"projection"), 1, GL_FALSE, proj);
-    glUseProgram(worldshader); glUniformMatrix4fv(glGetUniformLocation(worldshader,"projection"), 1, GL_FALSE, proj);
-    
-    glEnable(GL_DEPTH_TEST);
+    static int showConnectMenu = 0;
+    static int showCreateWorldMenu = 0;
+    static struct world world = {0};
+    static struct server internalServer = {0};
+      static int worldIsBeingCreated = 0;
+      static int showMainMenu = 1;
+      if (showMainMenu) {
+          if (button_once(&ctx, 60, 200, "create world", "tooltip")) {
+              showCreateWorldMenu = !showCreateWorldMenu;
+              showConnectMenu = 0;
+          }
+          button_once(&ctx, 60, 300, "load world", "tooltip");
+          if (button_once(&ctx, 60, 400, "join world", "tooltip")) {
+              showCreateWorldMenu = 0;
+              showConnectMenu = !showConnectMenu;
+          }
+          
+      }
+    if (showCreateWorldMenu) {
+        static textfield_t worldNameTextfield = {0};
+        textfield(&ctx, &worldNameTextfield, 650, 200, "world name", 10, "");
+        
+        static textfield_t worldHeightTextfield = {0};
+        textfield(&ctx, &worldHeightTextfield, 650, 300, "", 3, "");
+        drawText("world height (chunks)",800,300,fb_width,fb_height,8,16);
+        
+        
+        static textfield_t worldSizeTextfield = {0};
+        textfield(&ctx, &worldSizeTextfield, 650, 400, "", 3, "");
+        drawText("world size (chunks)",800,400,fb_width,fb_height,8,16);
+        
+        int pregenerateWorld;
+        checkbox(&ctx, 650, 500, &pregenerateWorld, "");
+        drawText("pre-generate world",800,500,fb_width,fb_height,8,16);
 
-    // create things
-    world = initTestWorld();
-    world.shaderProgram = worldshader;
-    world.tex = textureAtlas;
+        if ( button_once(&ctx, 650, 600, "create", "ok")) {
+            // world creation process
+            
+            
+            void initServerThread(struct server *);
+            initServerThread(&internalServer);
+            
+            struct client client = {
+                .world = &world,
+                .serverType = SERVER_INTERNAL,
+            };
+            showCreateWorldMenu = 0;
+            showMainMenu = 0;
+            worldIsBeingCreated = 1;
+            
+        }
+        
+    }
+
+    if (worldIsBeingCreated) {
+        
+        // if (serverIsReadyToJoin) {
+        //   worldIsBeingCreated = 0;
+        //   beginClientLoop(&client);
+        //}
+        
+        char * loadingMessage = "Loading world...";
+        drawText(loadingMessage, 650, 600, fb_width,fb_height,8,16);
+        
+    }
+      
+    if (showConnectMenu) {
+        static textfield_t ipAddrTextfield = {0};
+        textfield(&ctx, &ipAddrTextfield, 650, 400, "ip", 10, "ok");
+
+        static textfield_t portTextfield = {0};
+        textfield(&ctx, &portTextfield, 650, 500, "port", 10, "ok");
+
+        button_once(&ctx, 650, 600, "connect", "ok");
+        
+    }
+        
+
+
+    gInput.typedChar = 0;
+    glfwSwapBuffers(window);
+  }
     
-    thing_t blockHighlight = {
-        .prog = prog,
-        .tex = textureAtlas,
-        .vao = createMesh(vertices, indices, vSize, iSize),
-        .n = 36
-    };
-    mat4Identity(blockHighlight.transform);
-    thing_t crosshair = {
-        .prog = crosshairShader,
-        .tex = textureAtlas,
-        .vao = createMesh(vertices, indices, vSize, iSize),
-        .n = 6
-    };
-    mat4Scale(crosshair.transform, 0.01, 0.01, 0.01);
     
+    /* cleanup */
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return 0;
+}
+
+
+typedef struct {
+    int * shaders;
+    size_t nShaders;
+} client;
+
+void initClient(client * c, GLFWwindow * window) {
+    /*
     int onKey(int, int);
     player = (player_t){
         .cameraHeight = 1.5,
@@ -98,34 +172,47 @@ int main(void) {
         .move = NORMAL,
         .onKey = onKey
     };
+    thing_t blockHighlight = {
+        .prog = c->shaders[0],
+        .tex = 0,
+        .vao = createMesh(vertices, indices, vSize, iSize),
+        .n = 36
+    };
+    mat4Identity(blockHighlight.transform);
+    thing_t crosshair = {
+        .prog = c->shaders[1],
+        .tex = 0,
+        .vao = createMesh(vertices, indices, vSize, iSize),
+        .n = 6
+    };
+    mat4Scale(crosshair.transform, 0.01, 0.01, 0.01);
+    */
+    void beginClientLoop(GLFWwindow * window);
+    beginClientLoop(window);
+}
 
-    double lastTime = glfwGetTime();
-
-    double frameBeginTime;
-    double frameEndTime;
-    double mspf = 0;
+void beginClientLoop(GLFWwindow * window) {
+    
+    double currentTime = 0;
+    double begin = glfwGetTime();
+    double lastTime = 0;
     
     while (!glfwWindowShouldClose(window)) {
         
-        frameBeginTime = glfwGetTime();
+        lastTime = currentTime;
+        currentTime = glfwGetTime() - begin;
+        double delta = currentTime - lastTime;
         
         gInput.mouseDeltaX = 0.0;
         gInput.mouseDeltaY = 0.0;
         gInput.scrollY = 0.0;
         glfwPollEvents();
-        double now = glfwGetTime();
-        float delta = (float)(now - lastTime);
-        lastTime = now;
-        framecount++;
-        int fps;
-        
-        
         
         /* entity processing */
         
-        if (!guiEnabled) processPlayerMovement(&player, delta);
+        //if (!guiEnabled) processPlayerMovement(&player, delta);
         
-        /* block highlight */
+        /* block highlight 
         
         ivec3 hit;
         int hitfound = voxelRaycastHit(world,(fvec3){ player.pos.x , player.pos.y + player.cameraHeight, player.pos.z}, player.yaw - M_PI * 0.5, player.pitch * -1, 5, &hit);
@@ -136,12 +223,12 @@ int main(void) {
             mat4Scale(blockHighlight.transform, 0, 0, 0);
         }
         
-        /* debug info text */
+         debug info text 
         
         char debugBuffer[80];
         sprintf(debugBuffer, "%4d,%4d,%4d", (int)player.pos.x, (int)player.pos.y, (int)player.pos.z);
         
-        /* gui */
+        /* gui 
         
         if (gInput.keys[GLFW_KEY_ESCAPE]) { 
             //glfwSetWindowShouldClose(window, 1);
@@ -151,12 +238,12 @@ int main(void) {
             guiEnabled = 0; glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         }
         
-        /* developer menu */
+         developer menu */
         
         
 
 
-        /* draw */
+        /* draw 
         
         mat4 m1;            mat4RotateX(m1,player.pitch);
         mat4 m2;            mat4RotateY(m2,player.yaw);
@@ -270,14 +357,8 @@ int main(void) {
         glEnable(GL_DEPTH_TEST);
         drawThing(&crosshair);
         glfwSwapBuffers(window);
+        */
+        
 
     }
-    /* cleanup */
-    glDeleteTextures(1, &textureAtlas);
-    glDeleteVertexArrays(1, &vao);
-    glDeleteProgram(prog);
-    glDeleteProgram(worldshader);
-    glfwDestroyWindow(window);
-    glfwTerminate();
-    return 0;
 }

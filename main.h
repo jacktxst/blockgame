@@ -216,8 +216,8 @@ GLuint createMesh(struct Vertex *, unsigned *, unsigned, unsigned);
 
 unsigned shaderProgram(char * vertexPath, char * fragmentPath);
 
-#define WIDTH  640
-#define HEIGHT 480
+#define WIDTH  1280
+#define HEIGHT 960
 #define WINDOW_NAME "3D Rendering"
 
 extern struct voxelMesh_t voxelMesh;

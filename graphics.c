@@ -7,7 +7,7 @@
 
 #define MAX_SHADER_LENGTH 4096
 
-static GLuint loadAndCompileShaderFromFile(GLenum type, char * filename) {
+static GLuint loadAndCompileShaderFromFile (GLenum type, char * filename) {
     char src[MAX_SHADER_LENGTH];
     FILE * fptr;
     fptr = fopen(filename, "r");
@@ -61,6 +61,7 @@ int drawThing(thing_t * thing) {
     glDrawElements(GL_TRIANGLES, thing->n, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 }
+
 GLuint createMesh(struct Vertex * vtcs, unsigned * idcs, unsigned nV, unsigned nI) {
     GLuint VAO, VBO, EBO;
     glGenVertexArrays(1, &VAO);
