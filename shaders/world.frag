@@ -7,5 +7,5 @@ in float blockType;
 void main(){
    vec4 texColor = texture(tex, vec3(uv, blockType));
    fragColor = vec4(vec3(texColor.r, texColor.g, texColor.b)*brightness,1.0);
-   //fragColor = vec4(1,1,1,1);
+   fragColor = vec4(1,1,1,1);
 }

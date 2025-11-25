@@ -191,7 +191,6 @@ unsigned voxelMeshData(struct chunk * chunk) {
 }
 
 void generChunk(struct world * w, int x, int y, int z) {
-  w->creationProgress += 2;
   ivec3 regionPos = {floor((double)x/REGION_SIZE),floor((double)y/REGION_SIZE),floor((double)z/REGION_SIZE)};
   ivec3 chunkPosInRegion = {mod(x,REGION_SIZE),mod(y,REGION_SIZE),mod(z,REGION_SIZE)};  
   struct region * checkRegion = w->loadedRegions;
@@ -242,13 +241,11 @@ void * createWorld(void * arg) {
   struct world * w = (struct world *) arg;
   w->loadedRegions = NULL;
   unsigned chunkCount = WORLD_SIZE * WORLD_SIZE * WORLD_SIZE;
-  unsigned i = 0;
   for (int x = -WORLD_SIZE; x < WORLD_SIZE; x++) {
     for (int y = -WORLD_SIZE; y < WORLD_SIZE; y++) {
       for (int z = -WORLD_SIZE; z < WORLD_SIZE; z++) {
         generChunk(w, x, y, z);
-        i++;
-        //w->creationProgress = i * 0.01;
+        w->creationProgress ++;
       }
     }
   }
@@ -336,8 +333,11 @@ int voxelRaycastPlace(
     return 0;
 }
 
+// assumptions:
+// world shader is active
+// is supplied with projection and view matrices and texture
+
 void drawWorld(struct world * w, fvec3 pos, int dh, int dv) {
-  printf("drawing world\n");
   ivec3 chunkPos = (ivec3){floor((double)pos.x/CHUNK_SIZE), floor((double)pos.y/CHUNK_SIZE), floor((double)pos.z/CHUNK_SIZE)};
   for (int x = chunkPos.x - dh; x <= chunkPos.x + dh; x++) {
     for (int y = chunkPos.y - dv; y <= chunkPos.y + dv; y++) {
@@ -364,7 +364,6 @@ void drawWorld(struct world * w, fvec3 pos, int dh, int dv) {
             if (!checkChunk->vao) {
               voxelMeshData(checkChunk);
             }
-            printf("drawing the chunk\n!");
             glBindVertexArray(checkChunk->vao);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_ARRAY, w->tex);

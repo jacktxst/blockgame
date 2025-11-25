@@ -41,6 +41,15 @@ int main(void) {
     client.shaders[0] = shaderProgram("shaders/vertex.glsl", "shaders/fragment.glsl");
     client.shaders[1] = shaderProgram("shaders/world.vert", "shaders/world.frag");
     client.shaders[2] = shaderProgram("shaders/crosshair.vert", "shaders/crosshair.frag");
+    
+    mat4 proj; mat4Proj(proj, 1.5707963f, (float)WIDTH / (float)HEIGHT, 0.1f, 2048.0f);
+    glUseProgram(client.shaders[0]);
+    glUniform1i(glGetUniformLocation(client.shaders[0], "tex"), 0);
+    glUniformMatrix4fv(glGetUniformLocation(client.shaders[0],"projection"), 1, GL_FALSE, proj);
+    glUseProgram(client.shaders[1]);
+    glUniform1i(glGetUniformLocation(client.shaders[1], "tex0"), 0);
+    glUniformMatrix4fv(glGetUniformLocation(client.shaders[1],"projection"), 1, GL_FALSE, proj);
+
     client.player = (player_t){
         .cameraHeight = 1.5,
         .radius = 0.25,
@@ -49,7 +58,7 @@ int main(void) {
         .gravity = 12,
         .jump=7,
         .move = NORMAL,
-        .world = NULL,
+        .world = 0
     };
     thing_t blockHighlight = {
         .prog = client.shaders[0],
@@ -107,7 +116,7 @@ int main(void) {
             .keys = gInput.keys };
         
         switch (GameState) {
-            case GAMESTATE_MAINMENU:
+            case GAMESTATE_MAINMENU: {
                 static int attemptingConnect = 0;
                 static int showConnectMenu = 0;
                 static int showCreateWorldMenu = 0;
@@ -138,19 +147,15 @@ int main(void) {
             
                     if ( button_once(&ctx, 650, 600, "create", "create the world!")) {
                         pthread_t createWorldThread;
-                        client = (struct client){
-                            .world = (struct world){0},
-                            .serverType = SERVER_INTERNAL,
-                            .shaders[1] = 0
-                        };
-                        void * createWorld(void * arg); // TODO : implement
+                        client.world = (struct world){.shaderProgram = client.shaders[1]};
+                        void * createWorld(void * arg); 
                         pthread_create(&createWorldThread, NULL, createWorld, &client.world);
                         pthread_detach(createWorldThread);
                         showCreateWorldMenu = 0;
                         GameState = GAMESTATE_LOADING;
                     }
                 }
-                if (showConnectMenu) { // TODO : implement client connect
+                if (showConnectMenu) {
                     static textfield_t ipAddrTextfield = {0};
                     textfield(&ctx, &ipAddrTextfield, 650, 400, "ip", 10, "ok");
                     static textfield_t portTextfield = {0};
@@ -163,21 +168,21 @@ int main(void) {
                     if (!showConnectMenu) {
                         // destroy connect thread
                         attemptingConnect = 0;
-                        client = (struct client){0};
                     }
                     drawText("attempting connect", 650, 700, fb_width,fb_height,8,16);
                     if (client.isConnectedToServer) {
-                        beginClientLoop(window, &client);
                     }
                 }
                 break;
-            case GAMESTATE_LOADING:
+            }
+            case GAMESTATE_LOADING: {
                 char loadingMessage[30];
                 sprintf(loadingMessage, "Creating world %d %%", client.world.creationProgress);
                 drawText(loadingMessage, 650, 600, fb_width,fb_height,8,16);
-                if (client.world.creationProgress == 1024) {
+                if (client.world.creationProgress == 512) {
                     GameState = GAMESTATE_INGAME;}
                 break;
+            }
             case GAMESTATE_INGAME:
                 
                 if (gInput.keys[GLFW_KEY_ESCAPE]) { 
@@ -236,8 +241,7 @@ int main(void) {
                 client.player.move = flycheckbox ? FLY : NORMAL;
                 checkbox(&ctx,32,700, &wireframe, "wireframe");
                 colorpicker(&ctx, 400, 800, &color, "test");
-                glUseProgram(client.shaders[0]);
-                glUniform1i(glGetUniformLocation(client.shaders[0], "tex"), 0);
+                
                 static GLuint atlasTexture = 0;
                 static unsigned * dataPtr = 0;
                 static unsigned nLayers = 3;

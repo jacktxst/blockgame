@@ -6,6 +6,8 @@
 #define MAIN_H
 
 #include <stdbool.h>
+#include "math.h"
+#include "voxels.h"
 #include <GLFW/glfw3.h>
 
 typedef struct InputState {
