@@ -1,4 +1,4 @@
-gcc graphics.c input.c main.c math.c -o blockgame \
+gcc src/graphics.c src/input.c src/main.c src/math.c src/player.c src/world.c -o blockgame \
     -I/opt/homebrew/include \
     -L/opt/homebrew/lib \
     -lglfw -lGLEW \

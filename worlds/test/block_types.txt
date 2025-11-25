@@ -1,0 +1,8 @@
+block_name single_texture <texture id>
+block_name multi_texture <texture id...>
+block_name mini_world
+
+Custom shaders...
+
+air invis 
+stone single 0

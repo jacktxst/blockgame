@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "main.h"
+#include "voxels.h"
 
 
 int mod(int a, int b) {
@@ -67,8 +67,16 @@ voxel getVoxelInChunk(voxel * voxels, int x, int y, int z) {
   unsigned index = (z * CHUNK_SIZE * CHUNK_SIZE) + (y * CHUNK_SIZE) + x;
   return voxels[index];
 }
+
+
+
 unsigned voxelMeshData(struct chunk * chunk) {
   struct vertex { unsigned char x, y, z, w, vxl; };
+  if (!chunk->vao) {
+    glGenVertexArrays(1, &chunk->vao);
+    glGenBuffers(1, &chunk->vbo);
+    glGenBuffers(1, &chunk->ebo);
+  }
   // TODO: this is definitely not the right max size
   struct vertex * v = calloc(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE * 12, sizeof(struct vertex)); // can be static maybe?
   unsigned int * i  = calloc(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE * 18, sizeof(unsigned));
@@ -183,9 +191,9 @@ unsigned voxelMeshData(struct chunk * chunk) {
 }
 
 void generChunk(struct world * w, int x, int y, int z) {
+  w->creationProgress += 2;
   ivec3 regionPos = {floor((double)x/REGION_SIZE),floor((double)y/REGION_SIZE),floor((double)z/REGION_SIZE)};
   ivec3 chunkPosInRegion = {mod(x,REGION_SIZE),mod(y,REGION_SIZE),mod(z,REGION_SIZE)};  
-
   struct region * checkRegion = w->loadedRegions;
   int regionWasFound = 0;
   while (checkRegion) {
@@ -207,6 +215,9 @@ void generChunk(struct world * w, int x, int y, int z) {
     .x=chunkPosInRegion.x,
     .y=chunkPosInRegion.y,
     .z=chunkPosInRegion.z,
+    .vao = 0,
+    .vbo = 0,
+    .ebo = 0,
     .next = checkRegion->chunks,
     .voxels = calloc(sizeof(voxel) * CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE, 1)
   };
@@ -224,26 +235,23 @@ void generChunk(struct world * w, int x, int y, int z) {
       }
     }
   }
-  
   checkRegion->chunks = newChunk;
-  glGenVertexArrays(1, &newChunk->vao);
-  glGenBuffers(1, &newChunk->vbo);
-  glGenBuffers(1, &newChunk->ebo);
-  voxelMeshData(newChunk);
 }
 
-struct world initTestWorld() {
-  struct world world = {
-    .loadedRegions = NULL
-  };
+void * createWorld(void * arg) {
+  struct world * w = (struct world *) arg;
+  w->loadedRegions = NULL;
+  unsigned chunkCount = WORLD_SIZE * WORLD_SIZE * WORLD_SIZE;
+  unsigned i = 0;
   for (int x = -WORLD_SIZE; x < WORLD_SIZE; x++) {
     for (int y = -WORLD_SIZE; y < WORLD_SIZE; y++) {
       for (int z = -WORLD_SIZE; z < WORLD_SIZE; z++) {
-        generChunk(&world, x, y, z);
+        generChunk(w, x, y, z);
+        i++;
+        //w->creationProgress = i * 0.01;
       }
     }
   }
-  return world;
 }
 
 // yo shout out chat gpt for this one (i revised it a lil bit tho)
@@ -328,7 +336,8 @@ int voxelRaycastPlace(
     return 0;
 }
 
-void drawWorld(struct world w, fvec3 pos, int dh, int dv) {
+void drawWorld(struct world * w, fvec3 pos, int dh, int dv) {
+  printf("drawing world\n");
   ivec3 chunkPos = (ivec3){floor((double)pos.x/CHUNK_SIZE), floor((double)pos.y/CHUNK_SIZE), floor((double)pos.z/CHUNK_SIZE)};
   for (int x = chunkPos.x - dh; x <= chunkPos.x + dh; x++) {
     for (int y = chunkPos.y - dv; y <= chunkPos.y + dv; y++) {
@@ -337,7 +346,7 @@ void drawWorld(struct world w, fvec3 pos, int dh, int dv) {
         int regionY = floor((double)y/REGION_SIZE);
         int regionZ = floor((double)z/REGION_SIZE);
         ivec3 chunkPosInRegion = (ivec3){mod(x, REGION_SIZE), mod(y, REGION_SIZE), mod(z, REGION_SIZE)};
-        struct region * checkRegion = w.loadedRegions;
+        struct region * checkRegion = w->loadedRegions;
         while (checkRegion) {
           if (regionX != checkRegion->x || regionY != checkRegion->y || regionZ != checkRegion->z) {
             checkRegion = checkRegion->next;
@@ -349,12 +358,16 @@ void drawWorld(struct world w, fvec3 pos, int dh, int dv) {
               checkChunk = checkChunk->next;
               continue;
             }
-            unsigned modelUniformLoc = glGetUniformLocation(w.shaderProgram, "model");
+            unsigned modelUniformLoc = glGetUniformLocation(w->shaderProgram, "model");
             mat4 model; mat4Translate(model, x * CHUNK_SIZE, y * CHUNK_SIZE, z * CHUNK_SIZE); 
             glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
+            if (!checkChunk->vao) {
+              voxelMeshData(checkChunk);
+            }
+            printf("drawing the chunk\n!");
             glBindVertexArray(checkChunk->vao);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_ARRAY, w.tex);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, w->tex);
             glDrawElements(GL_TRIANGLES, checkChunk->icount, GL_UNSIGNED_INT, 0);
             glBindVertexArray(0);
             break;

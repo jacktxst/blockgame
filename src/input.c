@@ -9,12 +9,23 @@
 InputState gInput;
 
 static void key_cb(GLFWwindow* w, int key, int scancode, int action, int mods) {
-
     if (key >= 0 && key <= GLFW_KEY_LAST) {
         gInput.keys[key] = (action != GLFW_RELEASE);
-        
+        switch (action) {
+            case GLFW_PRESS:
+                switch (key) {
+                    case GLFW_KEY_ESCAPE:
+                        break;
+                }
+            break;
+            case GLFW_REPEAT:
+                break;
+            case GLFW_RELEASE:
+                break;
+        }
     }
 }
+
 
 static void mouse_button_cb(GLFWwindow* w, int button, int action, int mods) {
     if (button >= 0 && button <= GLFW_MOUSE_BUTTON_LAST) {

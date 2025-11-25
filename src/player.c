@@ -6,8 +6,10 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "math.h"
 
 #include "main.h"
+#include "voxels.h"
 
 extern unsigned char blockType;
 
@@ -48,7 +50,7 @@ void resolveAxis(player_t * p, fvec3 * v, axis_t axis, struct world world) {
                 v->x = 0;
                 break;
             case Y_AXIS:
-                if (v->y < 0) player.onGround = 1;
+                if (v->y < 0) p->onGround = 1;
                 centerPenetration = newPos.y - (int)(newPos.y);
                 correctionAmount = centerPenetration;// + p->radius;
                 newPos.y -= v->y;
@@ -61,39 +63,8 @@ void resolveAxis(player_t * p, fvec3 * v, axis_t axis, struct world world) {
                 v->z = 0;
                 break;
         }
-    } else if (axis == Y_AXIS) {player.onGround = 0;}
+    } else if (axis == Y_AXIS) {p->onGround = 0;}
     p->pos = newPos;
-}
-
-int onKey(int key, int action) {
-    switch (key) {
-        case GLFW_KEY_SPACE:
-            if (player.move == FLY) break;
-            player.vel.y = player.jump;
-            break;
-        case GLFW_KEY_R: {
-            ivec3 hit = {0,0,0};
-            int hitfound = voxelRaycastPlace(world, (fvec3){player.pos.x, player.pos.y+player.cameraHeight, player.pos.z}, player.yaw - M_PI * 0.5, player.pitch * -1, 5, &hit);
-                if (hitfound) {
-                    if (
-                        hit.x == (int)player.pos.x &&
-                        hit.y == (int)player.pos.y &&
-                        hit.z == (int)player.pos.z) break;
-                    
-                    //if (!getVoxelInWorld(world, hit.x, hit.y, hit.z)) return 0;
-                    setVoxelInWorld(world, hit.x, hit.y, hit.z, blockType);
-                }
-            }
-            break;
-        case GLFW_KEY_E: {
-            ivec3 hit = {0,0,0};
-            int hitfound = voxelRaycastHit(world,(fvec3){ player.pos.x, player.pos.y+player.cameraHeight, player.pos.z}, player.yaw - M_PI * 0.5, player.pitch * -1, 5, &hit);
-            if (hitfound) {
-                setVoxelInWorld(world, hit.x, hit.y, hit.z, 0);
-            }
-        }
-            break;
-    }
 }
 
 void processPlayerMovement(player_t * player, double deltaTime) {
@@ -103,7 +74,33 @@ void processPlayerMovement(player_t * player, double deltaTime) {
     if (player->pitch > M_PI / 2) player->pitch = M_PI / 2;
     if (player->pitch < -M_PI / 2) player->pitch = -M_PI / 2;
     if (player->yaw > 2 * M_PI) player->yaw -= 2 * M_PI;
+    // key input
+    if (gInput.keys[GLFW_KEY_SPACE] && !player->move == FLY) {
+        player->vel.y = player->jump;
+        gInput.keys[GLFW_KEY_SPACE] = 0;
+    }
+    /*
+        {
+            ivec3 hit = {0,0,0};
+            int hitfound = voxelRaycastPlace(world, (fvec3){player.pos.x, player.pos.y+player.cameraHeight, player.pos.z}, player.yaw - M_PI * 0.5, player.pitch * -1, 5, &hit);
+            if (hitfound) {
+            if (
+                hit.x == (int)player.pos.x &&
+                hit.y == (int)player.pos.y &&
+                hit.z == (int)player.pos.z) break;
+                setVoxelInWorld(world, hit.x, hit.y, hit.z, blockType);
+            }
+        }
 
+        {
+            ivec3 hit = {0,0,0};
+            int hitfound = voxelRaycastHit(world,(fvec3){ player.pos.x, player.pos.y+player.cameraHeight, player.pos.z}, player.yaw - M_PI * 0.5, player.pitch * -1, 5, &hit);
+            if (hitfound) {
+                setVoxelInWorld(world, hit.x, hit.y, hit.z, 0);
+            }
+        }
+     * 
+     */
     // move
     float magnitude = player->speed * deltaTime;
     
@@ -130,9 +127,9 @@ void processPlayerMovement(player_t * player, double deltaTime) {
     else {
         float yv = player->vel.y;
         player->vel.y *= deltaTime;
-        resolveAxis(player, &player->vel, X_AXIS, world);
-        resolveAxis(player, &player->vel, Y_AXIS, world);
-        resolveAxis(player, &player->vel, Z_AXIS, world);
+        resolveAxis(player, &player->vel, X_AXIS, player->world);
+        resolveAxis(player, &player->vel, Y_AXIS, player->world);
+        resolveAxis(player, &player->vel, Z_AXIS, player->world);
         player->vel.y =  player->vel.y ? yv : 0;
     }
 }
