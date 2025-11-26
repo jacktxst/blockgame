@@ -54,14 +54,20 @@ struct region {
     struct region * next;
 };
 
+typedef struct {
+    unsigned top, bottom, north, east, south, west;
+} blocktype2;
+
 struct world {
+    unsigned * block_tex_lut;
+    unsigned size_block_tex_lut;
     unsigned shaderProgram;
     unsigned creationProgress;
     struct region * loadedRegions;
     unsigned tex;
 };
 
-unsigned voxelMeshData(struct chunk * chunk);
+unsigned voxelMeshData(struct chunk * chunk, struct world * world);
 
 voxel getVoxelInWorld(struct world w, int x, int y, int z);
 

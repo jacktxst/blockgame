@@ -36,20 +36,24 @@ int main(void) {
         glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }
 
-    /* */
+    /* graphics pipeline setup */
     struct client client;
     client.shaders[0] = shaderProgram("shaders/vertex.glsl", "shaders/fragment.glsl");
     client.shaders[1] = shaderProgram("shaders/world.vert", "shaders/world.frag");
     client.shaders[2] = shaderProgram("shaders/crosshair.vert", "shaders/crosshair.frag");
     
     mat4 proj; mat4Proj(proj, 1.5707963f, (float)WIDTH / (float)HEIGHT, 0.1f, 2048.0f);
+    // default shader
     glUseProgram(client.shaders[0]);
     glUniform1i(glGetUniformLocation(client.shaders[0], "tex"), 0);
     glUniformMatrix4fv(glGetUniformLocation(client.shaders[0],"projection"), 1, GL_FALSE, proj);
+    // world shader
     glUseProgram(client.shaders[1]);
     glUniform1i(glGetUniformLocation(client.shaders[1], "tex0"), 0);
+    glUniform1i(glGetUniformLocation(client.shaders[1], "tex1"), 1);
     glUniformMatrix4fv(glGetUniformLocation(client.shaders[1],"projection"), 1, GL_FALSE, proj);
-
+    
+    /* game data setup */
     client.player = (player_t){
         .cameraHeight = 1.5,
         .radius = 0.25,
@@ -58,7 +62,8 @@ int main(void) {
         .gravity = 12,
         .jump=7,
         .move = NORMAL,
-        .world = 0
+        .world = 0,
+        .client = &client,
     };
     thing_t blockHighlight = {
         .prog = client.shaders[0],
@@ -68,7 +73,7 @@ int main(void) {
     };
     mat4Identity(blockHighlight.transform);
     thing_t crosshair = {
-        .prog = client.shaders[1],
+        .prog = client.shaders[2],
         .tex = 0,
         .vao = createCubeMesh(),
         .n = 6
@@ -87,7 +92,7 @@ int main(void) {
     while (!glfwWindowShouldClose(window)) {
         /* stuff that should happen on every frame */
 
-        // TODO : possible glitch here
+        // TODO : fix . bad!
         currentTime = glfwGetTime() - begin;
         double delta = currentTime - lastTime;
         lastTime = currentTime;
@@ -115,18 +120,24 @@ int main(void) {
             .sclY = 16,
             .keys = gInput.keys };
         
+        /* game states */
+        
         switch (GameState) {
             case GAMESTATE_MAINMENU: {
                 static int attemptingConnect = 0;
                 static int showConnectMenu = 0;
+                static int showLoadMenu = 0;
+                static int showPreferencesMenu = 0;
                 static int showCreateWorldMenu = 0;
                 if (button_once(&ctx, 60, 200, "create world", "generate a new world")) {
                     showCreateWorldMenu = !showCreateWorldMenu;
                     showConnectMenu = 0;
+                    showPreferencesMenu = 0;
                 }
                 button_once(&ctx, 60, 300, "load world", "load world from file");
                 if (button_once(&ctx, 60, 400, "join world", "join an online world")) {
                     showCreateWorldMenu = 0;
+                    showLoadMenu = 0;
                     showConnectMenu = !showConnectMenu;
                 }
                 if (showCreateWorldMenu) {
@@ -147,7 +158,12 @@ int main(void) {
             
                     if ( button_once(&ctx, 650, 600, "create", "create the world!")) {
                         pthread_t createWorldThread;
-                        client.world = (struct world){.shaderProgram = client.shaders[1]};
+                        client.world = (struct world){
+                            .shaderProgram = client.shaders[1],
+                            .block_tex_lut = calloc(1, 6 * sizeof(unsigned)),
+                            .size_block_tex_lut = 1
+                        };
+                        client.player.world = &client.world;
                         void * createWorld(void * arg); 
                         pthread_create(&createWorldThread, NULL, createWorld, &client.world);
                         pthread_detach(createWorldThread);
@@ -183,16 +199,11 @@ int main(void) {
                     GameState = GAMESTATE_INGAME;}
                 break;
             }
-            case GAMESTATE_INGAME:
-                
+            case GAMESTATE_INGAME: {
+                glClearColor(0.25, 0.25, 0.5, 0);
                 if (gInput.keys[GLFW_KEY_ESCAPE]) { 
-                    if (paused) {
-                        paused = 0;
-                        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-                    } else {
-                        paused = 1;
-                        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-                    }
+                    paused = !paused;
+                    glfwSetInputMode(window, GLFW_CURSOR, paused ? GLFW_CURSOR_NORMAL: GLFW_CURSOR_DISABLED);
                     gInput.keys[GLFW_KEY_ESCAPE] = 0;
                 }
                 /* movement */
@@ -210,6 +221,8 @@ int main(void) {
 
                 glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
                 glUseProgram(client.shaders[1]);
+
+                glEnable(GL_DEPTH_TEST);
                 void drawWorld(struct world * w, fvec3 pos, int dh, int dv);
                 static unsigned color = 0xFFFFFFFF;
                 float a = ((color >> 24) & 0xFF) / 255.0;
@@ -222,7 +235,7 @@ int main(void) {
                 glDisable(GL_CULL_FACE);
                 glDisable(GL_DEPTH_TEST);
                 glDisable(GL_BLEND);
-                /*
+                
                 ivec3 hit;
                 int hitfound = voxelRaycastHit(client.world,(fvec3){ client.player.pos.x , client.player.pos.y + client.player.cameraHeight, client.player.pos.z}, client.player.yaw - M_PI * 0.5, client.player.pitch * -1, 5, &hit);
                 if (hitfound) {
@@ -230,8 +243,8 @@ int main(void) {
                 } else {
                     mat4Scale(blockHighlight.transform, 0, 0, 0);
                 }
-                */
                 drawThing(&blockHighlight);
+                
                 glPolygonMode(GL_FRONT_AND_BACK,  GL_FILL);
                 slider(&ctx, 32,300, &client.player.speed, 0.0, 200.0, "speed");
                 slider(&ctx, 32,400, &client.player.gravity, 0.0, 20.0, "gravity");
@@ -243,19 +256,43 @@ int main(void) {
                 colorpicker(&ctx, 400, 800, &color, "test");
                 
                 static GLuint atlasTexture = 0;
+                static unsigned atlasTexIndex = 0;
                 static unsigned * dataPtr = 0;
                 static unsigned nLayers = 3;
-                atlasedit(&ctx, 32, 800, 16, 16, &nLayers, client.blockType, color, &dataPtr, &atlasTexture );
+                atlasedit(&ctx, 32, 800, 16, 16, &nLayers, atlasTexIndex, color, &dataPtr, &atlasTexture );
                 client.world.tex = atlasTexture;
             
-                if (button_once(&ctx, 32, 1080, "+","increment block type")) {client.blockType ++;};  
-                if (button_once(&ctx, 128, 1080, "-","decrement block type")) client.blockType--;
+                if (button_once(&ctx, 32, 1080, "+","increment tex")) {atlasTexIndex ++;};  
+                if (button_once(&ctx, 128, 1080, "-","decrement tex")) atlasTexIndex--;
                 if (button_once(&ctx, 256, 1080, "sav","save texture atlas")) {
                     FILE * fptr = fopen("atlas.texatlas", "wb");
                     fputc(nLayers, fptr);
                     fwrite(dataPtr, sizeof(unsigned), 16 * 16 * nLayers, fptr);
                     fclose(fptr);
+                    fptr = fopen("blocktypes", "wb");
+                    fputc(client.world.size_block_tex_lut, fptr);
+                    fwrite(client.world.block_tex_lut, sizeof(unsigned), client.world.size_block_tex_lut * 6, fptr);
+                    fclose(fptr);
                 };
+                static GLuint blocktypeLUT = 0;
+                if (!blocktypeLUT) {
+                    glGenTextures(1, &blocktypeLUT);
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_1D, blocktypeLUT);
+                    glTexImage1D(
+                        GL_TEXTURE_1D,
+                        0,
+                        GL_R32I,           // each texel = 32-bit signed integer
+                        6 * client.world.size_block_tex_lut,            // layers (y dimension)
+                        0,
+                        GL_RED_INTEGER,    // must be *_INTEGER for integer formats
+                        GL_INT,            // type of your data
+                        client.world.block_tex_lut
+                    );
+                    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                    glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                    glActiveTexture(GL_TEXTURE0);
+                }
                 if (button_once(&ctx, 512, 1080, "lod","load texture atlas")) {
                     FILE * fptr = fopen("atlas.texatlas", "rb");
                     if (fptr) {
@@ -269,12 +306,119 @@ int main(void) {
                                      0, GL_RGBA, GL_UNSIGNED_BYTE, dataPtr);
                         fclose(fptr);
                     }
+                    fptr = fopen("blocktypes", "rb");
+                    if (fptr) {
+                        fread(&client.world.size_block_tex_lut, sizeof(unsigned char), 1, fptr);
+                        client.world.block_tex_lut = realloc(client.world.block_tex_lut, client.world.size_block_tex_lut * 6 * sizeof(unsigned));
+                        fread(client.world.block_tex_lut, sizeof(unsigned), client.world.size_block_tex_lut * 6, fptr);
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_1D, blocktypeLUT);
+                        glTexImage1D(
+                            GL_TEXTURE_1D,
+                            0,
+                            GL_R32I,           // each texel = 32-bit signed integer
+                            6 * client.world.size_block_tex_lut,            // layers (y dimension)
+                            0,
+                            GL_RED_INTEGER,    // must be *_INTEGER for integer formats
+                            GL_INT,            // type of your data
+                            client.world.block_tex_lut
+                        );
+                        glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                        glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                        glActiveTexture(GL_TEXTURE0);
+                    }
                 };
                 {
                     char buffer[5];
                     sprintf(buffer, "%d",client.blockType);
                     drawText(buffer, 32, 1200, fb_width, fb_height, 8, 16);
                 }
+            
+                
+            
+                if (button_once(&ctx, 32, 1380, "+","increment block type")) {
+                    client.blockType ++;
+                    if (client.blockType == client.world.size_block_tex_lut) {
+                        client.world.size_block_tex_lut ++;
+                        client.world.block_tex_lut = realloc(client.world.block_tex_lut, client.world.size_block_tex_lut * 6 * sizeof(unsigned));
+                        //memset(client.world.block_tex_lut[6*client.world.size_block_tex_lut - 6], 0, 6 * sizeof(unsigned));
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_1D, blocktypeLUT);
+                        glTexImage1D(
+                            GL_TEXTURE_1D,
+                            0,
+                            GL_R32I,           // each texel = 32-bit signed integer
+                            6 * client.world.size_block_tex_lut,            // layers (y dimension)
+                            0,
+                            GL_RED_INTEGER,    // must be *_INTEGER for integer formats
+                            GL_INT,            // type of your data
+                            client.world.block_tex_lut
+                        );
+                        glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                        glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                        glActiveTexture(GL_TEXTURE0);
+                    }
+                };
+                if (button_once(&ctx, 128, 1380, "-","decrement block type")) {
+                    client.blockType--;
+                    if (client.blockType < 0) client.blockType = 0;
+                }
+                
+                // Bank of 6 faces
+                // Bank of 6 faces (row per face)
+                const int xSpacing = 100;  // horizontal spacing between buttons and label
+                const int ySpacing = 100;   // vertical spacing between rows
+                const int startX = 400;     // starting x position
+                const int startY = 1200;   // starting y position
+
+                for (int face = 0; face < 6; face++) {
+                    int rowY = startY + face * ySpacing;
+
+                    unsigned texIndex = client.world.block_tex_lut[client.blockType * 6 + face];
+                    
+                    if (button_once(&ctx, startX, rowY, "-", "decrement texture id")) {
+                        if (client.world.block_tex_lut[client.blockType * 6 + face] > 0)
+                            client.world.block_tex_lut[client.blockType * 6 + face]--;
+                        
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_1D, blocktypeLUT);
+                        glTexSubImage1D(
+                            GL_TEXTURE_1D,
+                            0,
+                            face + 6 * client.blockType,     
+                            1,                    
+                            GL_RED_INTEGER,
+                            GL_INT,
+                            &client.world.block_tex_lut[client.blockType * 6 + face]
+                        );
+                        glActiveTexture(GL_TEXTURE0);
+                        
+                    }
+
+                    if (button_once(&ctx, startX + xSpacing, rowY, "+", "increment texture id")) {
+                        client.world.block_tex_lut[client.blockType * 6 + face]++;
+                        
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_1D, blocktypeLUT);
+                        glTexSubImage1D(
+                            GL_TEXTURE_1D,
+                            0,
+                            face + 6 * client.blockType,
+                            1,
+                            GL_RED_INTEGER,
+                            GL_INT,
+                            &client.world.block_tex_lut[client.blockType * 6 + face]
+                        );
+                        glActiveTexture(GL_TEXTURE0);
+                        
+                    }
+
+                    // Draw label after the buttons
+                    char label[32];
+                    sprintf(label, "face %d: %d", face, texIndex);
+                    drawText(label, startX + 2 * xSpacing + 16, rowY, fb_width, fb_height, 8, 16);
+                }
+                
                 char buff[80]; sprintf(buff, "xyz %5d %5d %5d fps", (int)client.player.pos.x, (int)client.player.pos.y, (int)client.player.pos.z);
                 drawText(buff,32,0, fb_width, fb_height, 8, 16);
                 char buff2[30];
@@ -283,6 +427,7 @@ int main(void) {
                 glEnable(GL_DEPTH_TEST);
                 drawThing(&crosshair);
                 break;
+            }
         }
         // END FRAME
         gInput.typedChar = 0;

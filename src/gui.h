@@ -380,6 +380,7 @@ void drawText(const char * text, int x, int y, int screenWidth, int screenHeight
       fontPixels[i] = font[i + (int)(i/textureWidth)] == ' ' ? 0x00 : 0xFF;
     }
     glGenTextures(1, &texture);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 

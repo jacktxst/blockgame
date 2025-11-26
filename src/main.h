@@ -57,7 +57,8 @@ typedef struct player {
     double speed;
     double acceleration;
     double cameraHeight;
-    struct world world;
+    struct world * world;
+    struct client * client;
     int onGround;
 } player_t;
 

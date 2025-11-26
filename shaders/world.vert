@@ -11,6 +11,7 @@ uniform mat4 projection;  // Projection matrix
 
 out float brightness;          
 out float blockType;
+out float faceId;
 out vec2  uv;
 
 void main() {
@@ -33,21 +34,27 @@ void main() {
     switch (int(aCode / 6)) {
         case 0: // xpos
             brightness = 0.125;
+            faceId = 0.0;
             break;
         case 1: // xneg
             brightness = 0.75;
+            faceId = 1.0;
             break;
         case 2: // ypos
             brightness = 1.0;
+            faceId = 2.0;
             break;
         case 3: // yneg
             brightness = 0.125;
+            faceId = 3.0;
             break;
         case 4: // zpos
             brightness = 0.5;
+            faceId = 4.0;
             break;
         default: // zneg
             brightness = 0.25;
+            faceId = 5.0;
             break;
     }
 }

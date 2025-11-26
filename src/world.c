@@ -56,7 +56,7 @@ voxel setVoxelInWorld(struct world w, int x, int y, int z, voxel v) {
   voxel * loc = getVoxelLocInWorld(w,x,y,z,&chunk,0);
   if (!loc) return 0;
   *loc = v;
-  voxelMeshData(chunk);
+  voxelMeshData(chunk, &w);
   return 1;
 }
 
@@ -70,7 +70,7 @@ voxel getVoxelInChunk(voxel * voxels, int x, int y, int z) {
 
 
 
-unsigned voxelMeshData(struct chunk * chunk) {
+unsigned voxelMeshData(struct chunk * chunk, struct world * world) {
   struct vertex { unsigned char x, y, z, w, vxl; };
   if (!chunk->vao) {
     glGenVertexArrays(1, &chunk->vao);
@@ -362,7 +362,7 @@ void drawWorld(struct world * w, fvec3 pos, int dh, int dv) {
             mat4 model; mat4Translate(model, x * CHUNK_SIZE, y * CHUNK_SIZE, z * CHUNK_SIZE); 
             glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
             if (!checkChunk->vao) {
-              voxelMeshData(checkChunk);
+              voxelMeshData(checkChunk, w);
             }
             glBindVertexArray(checkChunk->vao);
             glActiveTexture(GL_TEXTURE0);
