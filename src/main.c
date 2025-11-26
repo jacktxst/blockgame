@@ -28,20 +28,17 @@ int main(void) {
     glfwMakeContextCurrent(window);
     glewExperimental = GL_TRUE;
     if (glewInit() != GLEW_OK) { fprintf(stderr, "failed to init glew\n"); return -1; }
-
     /* setup input */
     inputInit(window);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     if (glfwRawMouseMotionSupported()) {
         glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
     }
-
     /* graphics pipeline setup */
     struct client client;
     client.shaders[0] = shaderProgram("shaders/vertex.glsl", "shaders/fragment.glsl");
     client.shaders[1] = shaderProgram("shaders/world.vert", "shaders/world.frag");
     client.shaders[2] = shaderProgram("shaders/crosshair.vert", "shaders/crosshair.frag");
-    
     mat4 proj; mat4Proj(proj, 1.5707963f, (float)WIDTH / (float)HEIGHT, 0.1f, 2048.0f);
     // default shader
     glUseProgram(client.shaders[0]);
@@ -52,7 +49,6 @@ int main(void) {
     glUniform1i(glGetUniformLocation(client.shaders[1], "tex0"), 0);
     glUniform1i(glGetUniformLocation(client.shaders[1], "tex1"), 1);
     glUniformMatrix4fv(glGetUniformLocation(client.shaders[1],"projection"), 1, GL_FALSE, proj);
-    
     /* game data setup */
     client.player = (player_t){
         .cameraHeight = 1.5,
@@ -134,7 +130,19 @@ int main(void) {
                     showConnectMenu = 0;
                     showPreferencesMenu = 0;
                 }
-                button_once(&ctx, 60, 300, "load world", "load world from file");
+                if (button_once(&ctx, 60, 300, "load world", "load world from file")) {
+                    client.world = (struct world){
+                        .shaderProgram = client.shaders[1],
+                        .block_tex_lut = calloc(1, 6 * sizeof(unsigned)),
+                        .size_block_tex_lut = 1,
+                        .size_h = 32,
+                        .size_v = 4,
+                        .name = "world"
+                    };
+                    client.player.world = &client.world;
+                    loadWorld(&client.world);
+                    GameState = GAMESTATE_INGAME;
+                }
                 if (button_once(&ctx, 60, 400, "join world", "join an online world")) {
                     showCreateWorldMenu = 0;
                     showLoadMenu = 0;
@@ -152,16 +160,16 @@ int main(void) {
                     textfield(&ctx, &worldSizeTextfield, 650, 400, "", 3, "");
                     drawText("world size (chunks)",800,400,fb_width,fb_height,8,16);
             
-                    int pregenerateWorld;
-                    checkbox(&ctx, 650, 500, &pregenerateWorld, "");
-                    drawText("pre-generate world",800,500,fb_width,fb_height,8,16);
-            
                     if ( button_once(&ctx, 650, 600, "create", "create the world!")) {
                         pthread_t createWorldThread;
+
                         client.world = (struct world){
                             .shaderProgram = client.shaders[1],
                             .block_tex_lut = calloc(1, 6 * sizeof(unsigned)),
-                            .size_block_tex_lut = 1
+                            .size_block_tex_lut = 1,
+                            .size_h = 32,
+                            .size_v = 4,
+                            .name = "world"
                         };
                         client.player.world = &client.world;
                         void * createWorld(void * arg); 
@@ -195,7 +203,8 @@ int main(void) {
                 char loadingMessage[30];
                 sprintf(loadingMessage, "Creating world %d %%", client.world.creationProgress);
                 drawText(loadingMessage, 650, 600, fb_width,fb_height,8,16);
-                if (client.world.creationProgress == 512) {
+                if (client.world.creationProgress == -1) {
+                    saveWorld(&client.world);
                     GameState = GAMESTATE_INGAME;}
                 break;
             }
@@ -223,6 +232,7 @@ int main(void) {
                 glUseProgram(client.shaders[1]);
 
                 glEnable(GL_DEPTH_TEST);
+                glEnable(GL_CULL_FACE);
                 void drawWorld(struct world * w, fvec3 pos, int dh, int dv);
                 static unsigned color = 0xFFFFFFFF;
                 float a = ((color >> 24) & 0xFF) / 255.0;
@@ -230,7 +240,7 @@ int main(void) {
                 float g = ((color >> 8)  & 0xFF) / 255.0;
                 float b = (color & 0xFFu) / 255.0;
                 //assumes that viewmodel has been set
-                drawWorld(&client.world, client.player.pos, 5, 5);
+                drawWorld(&client.world, client.player.pos, 8, 8);
                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
                 glDisable(GL_CULL_FACE);
                 glDisable(GL_DEPTH_TEST);
@@ -249,6 +259,24 @@ int main(void) {
                 slider(&ctx, 32,300, &client.player.speed, 0.0, 200.0, "speed");
                 slider(&ctx, 32,400, &client.player.gravity, 0.0, 20.0, "gravity");
                 slider(&ctx, 32,500, &client.player.jump, 0.0, 20.0, "jump");
+
+                static unsigned lightColor = 0xFFFFFFFF;
+                colorpicker(&ctx, 300, 300, &lightColor, "light color");
+
+                if (button_once(&ctx, 600, 300, "save and quit", "save the world")) {
+                    saveWorld(&client.world);
+                    GameState = GAMESTATE_MAINMENU;
+                }
+                
+                float lightA = (float)((lightColor >> 24) & 0xFF) / 255.0;
+                float lightB = (float)((lightColor >> 16) & 0xFF) / 255.0;
+                float lightG = (float)((lightColor >> 8)  & 0xFF) / 255.0;
+                float lightR = (float)(lightColor & 0xFF) / 255.0;
+                
+                glUseProgram(client.shaders[1]);
+                glUniform3f(glGetUniformLocation(client.shaders[1], "lightColor"), lightR, lightG, lightB);
+
+                
                 static int flycheckbox = 1;
                 checkbox(&ctx,32,600, &flycheckbox, "flycheckbox");
                 client.player.move = flycheckbox ? FLY : NORMAL;

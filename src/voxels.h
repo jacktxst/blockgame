@@ -8,22 +8,13 @@
 #include "math.h"
 #include <stdbool.h>
 
-#define WORLD_SIZE 4
+#define WORLD_SIZE 8
 #define REGION_SIZE 16
 #define CHUNK_SIZE 16
-#define RENDER_DISTANCE 8
+#define RENDER_DISTANCE 256
 #define ANTIDENSITY 200
 
 typedef unsigned char voxel;
-
-#define BLOCK_ANIMATED 1
-#define BLOCK_ROTATE_6 2
-#define BLOCK_ROTATE_4 4
-
-typedef struct {
-    unsigned top, bottom, north, east, south, west;
-    unsigned flags;
-} blocktype;
 
 struct chunk {
     unsigned x;
@@ -54,17 +45,16 @@ struct region {
     struct region * next;
 };
 
-typedef struct {
-    unsigned top, bottom, north, east, south, west;
-} blocktype2;
-
 struct world {
     unsigned * block_tex_lut;
     unsigned size_block_tex_lut;
     unsigned shaderProgram;
     unsigned creationProgress;
+    unsigned size_v;
+    unsigned size_h;
     struct region * loadedRegions;
     unsigned tex;
+    char * name;
 };
 
 unsigned voxelMeshData(struct chunk * chunk, struct world * world);
@@ -77,6 +67,8 @@ int voxelRaycastHit( struct world world, fvec3 o, float yaw, float pitch, float 
 
 int voxelRaycastPlace( struct world world, fvec3 o, float yaw, float pitch, float maxDist, ivec3 * hit );
 
+int saveWorld(struct world * w);
 
+int loadWorld(struct world * w);
 
 #endif //VOXELS_H

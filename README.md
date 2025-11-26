@@ -48,8 +48,6 @@ the change in the affected blocks.
 - The world is limited in size, however the engine is capable of more already
 - There are no entities and no block behavior
 - All blocks must be fully solid cubes
-- All faces of a block have the same texture
-- There is no main menu
 
 ### Future Plans
 
@@ -65,3 +63,19 @@ the change in the affected blocks.
 - Scripting system
 - Networking
 
+### Quick Fixes
+
+- negative numbers in bad places
+- signed - unsigned conversion issues
+
+### Short Term Goals
+
+- slightly nicer lighting
+- specify finite world size
+- save world
+- load world
+- world generation options
+
+### Medium Term
+
+- networking

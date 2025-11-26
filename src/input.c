@@ -26,7 +26,6 @@ static void key_cb(GLFWwindow* w, int key, int scancode, int action, int mods) {
     }
 }
 
-
 static void mouse_button_cb(GLFWwindow* w, int button, int action, int mods) {
     if (button >= 0 && button <= GLFW_MOUSE_BUTTON_LAST) {
         gInput.mouseButtons[button] = (action != GLFW_RELEASE);
