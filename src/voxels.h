@@ -9,9 +9,8 @@
 #include <stdbool.h>
 
 #define WORLD_SIZE 8
-#define REGION_SIZE 16
-#define CHUNK_SIZE 16
-#define RENDER_DISTANCE 256
+#define REGION_SIZE 8
+#define CHUNK_SIZE 64
 #define ANTIDENSITY 200
 
 typedef unsigned char voxel;

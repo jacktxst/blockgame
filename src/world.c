@@ -272,7 +272,6 @@ int loadWorld(struct world *w) {
     return 0;
 }
 
-
 void generChunk(struct world * w, int x, int y, int z) {
   ivec3 regionPos = {floor((double)x/REGION_SIZE),floor((double)y/REGION_SIZE),floor((double)z/REGION_SIZE)};
   ivec3 chunkPosInRegion = {mod(x,REGION_SIZE),mod(y,REGION_SIZE),mod(z,REGION_SIZE)};  
@@ -324,7 +323,6 @@ void generChunk(struct world * w, int x, int y, int z) {
 void * createWorld(void * arg) {
   struct world * w = (struct world *) arg;
   w->loadedRegions = NULL;
-  unsigned chunkCount = WORLD_SIZE * WORLD_SIZE * WORLD_SIZE;
   for (int x = 0; x < (w->size_h); x++) {
     for (int y = 0; y < (w->size_v); y++) {
       for (int z = 0; z < (w->size_h); z++) {
@@ -419,46 +417,29 @@ int voxelRaycastPlace(
 }
 
 // assumptions:
-// world shader is active
 // is supplied with projection and view matrices and texture
-
-void drawWorld(struct world * w, fvec3 pos, int dh, int dv) {
-  ivec3 chunkPos = (ivec3){floor((double)pos.x/CHUNK_SIZE), floor((double)pos.y/CHUNK_SIZE), floor((double)pos.z/CHUNK_SIZE)};
-  for (int x = chunkPos.x - dh; x <= chunkPos.x + dh; x++) {
-    for (int y = chunkPos.y - dv; y <= chunkPos.y + dv; y++) {
-      for (int z = chunkPos.z - dh; z <= chunkPos.z + dh; z++) {
-        int regionX = floor((double)x/REGION_SIZE);
-        int regionY = floor((double)y/REGION_SIZE);
-        int regionZ = floor((double)z/REGION_SIZE);
-        ivec3 chunkPosInRegion = (ivec3){mod(x, REGION_SIZE), mod(y, REGION_SIZE), mod(z, REGION_SIZE)};
-        struct region * checkRegion = w->loadedRegions;
-        while (checkRegion) {
-          if (regionX != checkRegion->x || regionY != checkRegion->y || regionZ != checkRegion->z) {
-            checkRegion = checkRegion->next;
-            continue;
-          }
-          struct chunk * checkChunk = checkRegion->chunks;
-          while (checkChunk) {
-            if (chunkPosInRegion.x != checkChunk->x || chunkPosInRegion.y != checkChunk->y || chunkPosInRegion.z != checkChunk->z) {
-              checkChunk = checkChunk->next;
-              continue;
-            }
-            unsigned modelUniformLoc = glGetUniformLocation(w->shaderProgram, "model");
-            mat4 model; mat4Translate(model, x * CHUNK_SIZE, y * CHUNK_SIZE, z * CHUNK_SIZE); 
-            glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
-            if (!checkChunk->vao) {
-              voxelMeshData(checkChunk, w);
-            }
-            glBindVertexArray(checkChunk->vao);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_ARRAY, w->tex);
-            glDrawElements(GL_TRIANGLES, checkChunk->icount, GL_UNSIGNED_INT, 0);
-            glBindVertexArray(0);
-            break;
-          }
-          break;
-        }
+void drawAllChunks(struct world * w, fvec3 pos) {
+  glUseProgram(w->shaderProgram);
+  unsigned modelUniformLoc = glGetUniformLocation(w->shaderProgram, "model");
+  struct region * r = w->loadedRegions;
+  struct chunk * c;
+  ivec3 chunkPos;
+  mat4 model;
+  while (r) {
+    c = r->chunks;
+    while (c) {
+      chunkPos = (ivec3){r->x * REGION_SIZE + c->x , r->y * REGION_SIZE + c->y, r->z * REGION_SIZE + c->z};
+      mat4Translate(model, chunkPos.x * CHUNK_SIZE, chunkPos.y * CHUNK_SIZE, chunkPos.z * CHUNK_SIZE); 
+      glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
+      if (!c->vao) {
+        voxelMeshData(c, w);
       }
+      glBindVertexArray(c->vao);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, w->tex);
+      glDrawElements(GL_TRIANGLES, c->icount, GL_UNSIGNED_INT, 0);
+      c = c->next;
     }
+    r = r->next;
   }
-};
+}

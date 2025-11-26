@@ -5,7 +5,6 @@
 // MINIMALISTIC IMMEDIATE MODE SINGLE HEADER GUI LIBRARY FOR C
 // I'm pretty happy with this.
 
-
 // Pure immediate mode GUI system
 // Current features
 //   drawText
@@ -27,6 +26,7 @@
 //   multiple layers
 //   fill
 //   blending
+//  z layers
 //  textbox
 //  dropdown
 //  radio button
@@ -478,12 +478,18 @@ void drawText(const char * text, int x, int y, int screenWidth, int screenHeight
   }
 }
 
+typedef enum {GUI_LAYOUT_MANUAL, GUI_LAYOUT_AUTO} gui_layout;
+
 struct guictx {
-  int scrw, scrh; // screenwidth and screenheight
+  int screenWidth, screenHeight; // screenwidth and screenheight
   int mx, my, mb; // mouse x, mouse y, mouse button boolean
-  int sclX, sclY; // text scaling
+  int textScaleX, textScaleY; // text scaling
+  
   unsigned char typedChar;
   int * keys; // glfw keys
+  gui_layout layout;
+  int layoutX, layoutY;
+  int spacing;
 };
 
 typedef struct  {
@@ -502,8 +508,8 @@ void textfield(struct guictx * ctx, textfield_t * tf, int x, int y, char * str, 
     tf->buffer = (char *) malloc(strlen(str) + 1);
     strcpy(tf->buffer, str);
   }
-  drawText(tf->buffer, x, y, ctx->scrw, ctx->scrh, ctx->sclX, ctx->sclY);
-  drawRect(x + (tf->cursorPos * CHAR_W * ctx->sclX), y, 1*ctx->sclX, CHAR_H*ctx->sclY, ctx->scrw, ctx->scrh, 0xFFFFFFFF);
+  drawText(tf->buffer, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
+  drawRect(x + (tf->cursorPos * CHAR_W * ctx->textScaleX), y, 1*ctx->textScaleX, CHAR_H*ctx->textScaleY, ctx->screenWidth, ctx->screenHeight, 0xFFFFFFFF);
   if (tf->focused && ctx->typedChar) { 
     unsigned length = strlen(tf->buffer);
     if (maxLength < 0 ? 0 : length == maxLength) return;
@@ -527,11 +533,11 @@ void textfield(struct guictx * ctx, textfield_t * tf, int x, int y, char * str, 
     memmove(tf->buffer + tf->cursorPos, tf->buffer + tf->cursorPos + 1, length - tf->cursorPos);
     tf->buffer = (char *) realloc(tf->buffer, length);
   }
-  if (x < ctx->mx && ctx->mx < x+(1+strlen(tf->buffer))*CHAR_W*ctx->sclX && y < ctx->my && ctx->my < y+CHAR_H*ctx->sclY) {
-    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
+  if (x < ctx->mx && ctx->mx < x+(1+strlen(tf->buffer))*CHAR_W*ctx->textScaleX && y < ctx->my && ctx->my < y+CHAR_H*ctx->textScaleY) {
+    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
     if (ctx->mb && !wasMouseClicked) {
       tf->focused = 1;
-      tf->cursorPos = (ctx->mx - x) / (CHAR_W * ctx->sclX);
+      tf->cursorPos = (ctx->mx - x) / (CHAR_W * ctx->textScaleX);
       int len = strlen(tf->buffer);
       if (tf->cursorPos > len) {
         tf->cursorPos = len;
@@ -543,12 +549,12 @@ void textfield(struct guictx * ctx, textfield_t * tf, int x, int y, char * str, 
 }
 
 void slider(struct guictx * ctx, int x, int y, double * value, float min, float max, char * tooltip) {
-  drawRect(x,y,256,64,ctx->scrw,ctx->scrh,0xFFFFFFFF);
-  drawRect(x+   (    (*value-min)/(max-min)*256+min    ) ,y,64,64,ctx->scrw,ctx->scrh,0xFF000000);
+  drawRect(x,y,256,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
+  drawRect(x+   (    (*value-min)/(max-min)*256+min    ) ,y,64,64,ctx->screenWidth,ctx->screenHeight,0xFF000000);
   if (x < ctx->mx && ctx->mx < x+256 && y < ctx->my && ctx->my < y+64) {
     char buffer[40];
     sprintf(buffer, "%f %s", (ctx->mx-x)/256.0*(max-min)+min, tooltip );
-    drawText(buffer,ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
+    drawText(buffer,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
     if (ctx->mb) {
       *value = (ctx->mx-x)/256.0*(max-min)+min;
     }
@@ -562,28 +568,28 @@ void colorpicker(struct guictx * ctx, int x, int y, unsigned * value, char * too
   unsigned char g = (*value >> 8)  & 0xFF;
   unsigned char r = (*value)       & 0xFF;
     
-  drawRect(x,y,256,64,ctx->scrw,ctx->scrh,0xFFFFFFFF);
-  drawRect(x+ r ,y,64,64,ctx->scrw,ctx->scrh,0xFFFF0000);
+  drawRect(x,y,256,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
+  drawRect(x+ r ,y,64,64,ctx->screenWidth,ctx->screenHeight,0xFFFF0000);
   if (x <= ctx->mx && ctx->mx < x+256 && y < ctx->my && ctx->my < y+64) {
-    drawText("r",ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
+    drawText("r",ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
     if (ctx->mb) {
       r = ctx->mx-x;
     }
   }
 
-  drawRect(x,y+100,256,64,ctx->scrw,ctx->scrh,0xFFFFFFFF);
-  drawRect(x+ g ,y+100,64,64,ctx->scrw,ctx->scrh,0xFF00FF00);
+  drawRect(x,y+100,256,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
+  drawRect(x+ g ,y+100,64,64,ctx->screenWidth,ctx->screenHeight,0xFF00FF00);
   if (x <= ctx->mx && ctx->mx < x+256 && y+100 < ctx->my && ctx->my < y+64+100) {
-    drawText("g",ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
+    drawText("g",ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
     if (ctx->mb) {
       g = ctx->mx-x;
     }
   }
 
-  drawRect(x,y+200,256,64,ctx->scrw,ctx->scrh,0xFFFFFFFF);
-  drawRect(x+ b ,y+200,64,64,ctx->scrw,ctx->scrh,0xFF0000FF);
+  drawRect(x,y+200,256,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
+  drawRect(x+ b ,y+200,64,64,ctx->screenWidth,ctx->screenHeight,0xFF0000FF);
   if (x <= ctx->mx && ctx->mx < x+256 && y+200 < ctx->my && ctx->my < y+64+200) {
-    drawText("b",ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
+    drawText("b",ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
     if (ctx->mb) {
       b = ctx->mx-x;
     }
@@ -594,12 +600,12 @@ void colorpicker(struct guictx * ctx, int x, int y, unsigned * value, char * too
 
 void checkbox(struct guictx * ctx, int x, int y, int * value, char * tooltip) {
   static int wasMouseClicked = 0;
-  drawRect(x   ,y,64,64,ctx->scrw,ctx->scrh,0xFFFFFFFF);
-  drawRect(x+ 4,y+ 4,56,56,ctx->scrw,ctx->scrh,0xFF000000);
-  drawRect(x+ 8,y+ 8,48,48,ctx->scrw,ctx->scrh,0xFFFFFFFF);
-  if (*value != 0) drawRect(x+12,y+12,40,40,ctx->scrw,ctx->scrh,0xFF000000);
+  drawRect(x   ,y,64,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
+  drawRect(x+ 4,y+ 4,56,56,ctx->screenWidth,ctx->screenHeight,0xFF000000);
+  drawRect(x+ 8,y+ 8,48,48,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
+  if (*value != 0) drawRect(x+12,y+12,40,40,ctx->screenWidth,ctx->screenHeight,0xFF000000);
   if (x < ctx->mx && ctx->mx < x+64 && y < ctx->my && ctx->my < y+64) {
-    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
+    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
     if (ctx->mb && !wasMouseClicked) {
       *value = !(*value);
     }
@@ -641,8 +647,8 @@ void atlasedit(struct guictx * ctx, int x, int y, int w, int h, unsigned * nLaye
     *nLayers = newLayers;
   }
   glDisable(GL_DEPTH_TEST);
-  drawRect(x,y,w*16,h*16,ctx->scrw,ctx->scrh,0xFF000000);
-  drawTexturedRect(x,y,w*16,h*16,ctx->scrw,ctx->scrh,*texture,layer);
+  drawRect(x,y,w*16,h*16,ctx->screenWidth,ctx->screenHeight,0xFF000000);
+  drawTexturedRect(x,y,w*16,h*16,ctx->screenWidth,ctx->screenHeight,*texture,layer);
   if (x < ctx->mx && ctx->mx < x+w*16 && y < ctx->my && ctx->my < y+h*16) {
     int px = (ctx->mx - x) / 16;
     int py = (ctx->my - y) / 16;
@@ -661,15 +667,15 @@ void atlasedit(struct guictx * ctx, int x, int y, int w, int h, unsigned * nLaye
 }
 
 bool button(struct guictx * ctx, int x, int y, char * label, char * tooltip) {
-  int w = strlen(label) * CHAR_W * ctx->sclX;
-  int h = CHAR_H * ctx->sclY;
-  drawRect(x, y, w, h, ctx->scrw, ctx->scrh,0xFF0000FF);
-  drawText(label, x, y, ctx->scrw, ctx->scrh, ctx->sclX, ctx->sclY);
+  int w = strlen(label) * CHAR_W * ctx->textScaleX;
+  int h = CHAR_H * ctx->textScaleY;
+  drawRect(x, y, w, h, ctx->screenWidth, ctx->screenHeight,0xFF0000FF);
+  drawText(label, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
   if (x < ctx->mx && ctx->mx < x+w && y < ctx->my && ctx->my < y+h) {
-    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
+    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
     if ( ctx->mb ) {
-      drawRect(x, y, w, h, ctx->scrw, ctx->scrh,0xFFFFFFFF);
-      drawText(label, x, y, ctx->scrw, ctx->scrh, ctx->sclX, ctx->sclY);
+      drawRect(x, y, w, h, ctx->screenWidth, ctx->screenHeight,0xFFFFFFFF);
+      drawText(label, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
       return true;
     }
     return false;
@@ -678,15 +684,15 @@ bool button(struct guictx * ctx, int x, int y, char * label, char * tooltip) {
 
 bool button_once(struct guictx * ctx, int x, int y, char * label, char * tooltip) {
   static int wasMouseClickedOnPreviousFrame = 0;
-  int w = strlen(label) * CHAR_W * ctx->sclX;
-  int h = CHAR_H * ctx->sclY;
-  drawRect(x, y, w, h, ctx->scrw, ctx->scrh,0xFF0000FF);
-  drawText(label, x, y, ctx->scrw, ctx->scrh, ctx->sclX, ctx->sclY);
+  int w = strlen(label) * CHAR_W * ctx->textScaleX;
+  int h = CHAR_H * ctx->textScaleY;
+  drawRect(x, y, w, h, ctx->screenWidth, ctx->screenHeight,0xFF0000FF);
+  drawText(label, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
   if (x < ctx->mx && ctx->mx < x+w && y < ctx->my && ctx->my < y+h) {
-    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
+    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
     if ( ctx->mb ) {
-      drawRect(x, y, w, h, ctx->scrw, ctx->scrh,0xFFFFFFFF);
-      drawText(label, x, y, ctx->scrw, ctx->scrh, ctx->sclX, ctx->sclY);
+      drawRect(x, y, w, h, ctx->screenWidth, ctx->screenHeight,0xFFFFFFFF);
+      drawText(label, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
       if (!wasMouseClickedOnPreviousFrame) {
         wasMouseClickedOnPreviousFrame = 1;
         return true;

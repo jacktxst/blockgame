@@ -61,6 +61,15 @@ int main(void) {
         .world = 0,
         .client = &client,
     };
+    client.world = (struct world){
+        .shaderProgram = client.shaders[1],
+        .block_tex_lut = calloc(1, 6 * sizeof(unsigned)),
+        .size_block_tex_lut = 1,
+        .size_h = 32,
+        .size_v = 1,
+        .name = "world"
+    };
+    client.player.world = &client.world;
     thing_t blockHighlight = {
         .prog = client.shaders[0],
         .tex = 0,
@@ -106,14 +115,14 @@ int main(void) {
         glPolygonMode(GL_FRONT_AND_BACK,  GL_FILL);
         
         struct guictx ctx = {
-            .scrw = fb_width,
-            .scrh = fb_height,
+            .screenWidth = fb_width,
+            .screenHeight = fb_height,
             .mx = gInput.mouseX * 2 ,
             .my = gInput.mouseY * 2 ,
             .mb = gInput.mouseButtons[GLFW_MOUSE_BUTTON_LEFT],
             .typedChar =  gInput.typedChar,
-            .sclX = 8,
-            .sclY = 16,
+            .textScaleX = 8,
+            .textScaleY = 16,
             .keys = gInput.keys };
         
         /* game states */
@@ -131,15 +140,8 @@ int main(void) {
                     showPreferencesMenu = 0;
                 }
                 if (button_once(&ctx, 60, 300, "load world", "load world from file")) {
-                    client.world = (struct world){
-                        .shaderProgram = client.shaders[1],
-                        .block_tex_lut = calloc(1, 6 * sizeof(unsigned)),
-                        .size_block_tex_lut = 1,
-                        .size_h = 32,
-                        .size_v = 4,
-                        .name = "world"
-                    };
-                    client.player.world = &client.world;
+                    
+                    
                     loadWorld(&client.world);
                     GameState = GAMESTATE_INGAME;
                 }
@@ -162,16 +164,7 @@ int main(void) {
             
                     if ( button_once(&ctx, 650, 600, "create", "create the world!")) {
                         pthread_t createWorldThread;
-
-                        client.world = (struct world){
-                            .shaderProgram = client.shaders[1],
-                            .block_tex_lut = calloc(1, 6 * sizeof(unsigned)),
-                            .size_block_tex_lut = 1,
-                            .size_h = 32,
-                            .size_v = 4,
-                            .name = "world"
-                        };
-                        client.player.world = &client.world;
+                        
                         void * createWorld(void * arg); 
                         pthread_create(&createWorldThread, NULL, createWorld, &client.world);
                         pthread_detach(createWorldThread);
@@ -233,14 +226,15 @@ int main(void) {
 
                 glEnable(GL_DEPTH_TEST);
                 glEnable(GL_CULL_FACE);
-                void drawWorld(struct world * w, fvec3 pos, int dh, int dv);
+                void drawAllChunks(struct world * w, fvec3 pos);
                 static unsigned color = 0xFFFFFFFF;
                 float a = ((color >> 24) & 0xFF) / 255.0;
                 float r = ((color >> 16) & 0xFF) / 255.0;
-                float g = ((color >> 8)  & 0xFF) / 255.0;
+                float g = ((color >> 8)  & 0xFF) / 255.0;   
                 float b = (color & 0xFFu) / 255.0;
                 //assumes that viewmodel has been set
-                drawWorld(&client.world, client.player.pos, 8, 8);
+                drawAllChunks(&client.world, client.player.pos);
+                
                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
                 glDisable(GL_CULL_FACE);
                 glDisable(GL_DEPTH_TEST);
@@ -293,7 +287,7 @@ int main(void) {
                 if (button_once(&ctx, 32, 1080, "+","increment tex")) {atlasTexIndex ++;};  
                 if (button_once(&ctx, 128, 1080, "-","decrement tex")) atlasTexIndex--;
                 if (button_once(&ctx, 256, 1080, "sav","save texture atlas")) {
-                    FILE * fptr = fopen("atlas.texatlas", "wb");
+                    FILE * fptr = fopen("atlas", "wb");
                     fputc(nLayers, fptr);
                     fwrite(dataPtr, sizeof(unsigned), 16 * 16 * nLayers, fptr);
                     fclose(fptr);
@@ -322,7 +316,7 @@ int main(void) {
                     glActiveTexture(GL_TEXTURE0);
                 }
                 if (button_once(&ctx, 512, 1080, "lod","load texture atlas")) {
-                    FILE * fptr = fopen("atlas.texatlas", "rb");
+                    FILE * fptr = fopen("atlas", "rb");
                     if (fptr) {
                         fread(&nLayers, sizeof(unsigned char), 1, fptr);
                         dataPtr = realloc(dataPtr, nLayers * 16 * 16 * sizeof(unsigned));
