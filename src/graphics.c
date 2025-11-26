@@ -7,7 +7,7 @@
 
 #define MAX_SHADER_LENGTH 4096
 
-static GLuint loadAndCompileShaderFromFile(GLenum type, char * filename) {
+static GLuint loadAndCompileShaderFromFile (GLenum type, char * filename) {
     char src[MAX_SHADER_LENGTH];
     FILE * fptr;
     fptr = fopen(filename, "r");
@@ -61,7 +61,79 @@ int drawThing(thing_t * thing) {
     glDrawElements(GL_TRIANGLES, thing->n, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 }
+
 GLuint createMesh(struct Vertex * vtcs, unsigned * idcs, unsigned nV, unsigned nI) {
+    GLuint VAO, VBO, EBO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+    glGenBuffers(1, &EBO);
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, nV * sizeof(struct Vertex), vtcs, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, nI * sizeof(unsigned int), idcs, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_BYTE, GL_TRUE, sizeof(struct Vertex), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_BYTE, GL_TRUE, sizeof(struct Vertex), (void*) offsetof(struct Vertex, i));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(struct Vertex), (void*) offsetof(struct Vertex, u));
+    glBindVertexArray(0);
+    return VAO;
+}
+
+GLuint createCubeMesh()  {
+    static const char vtcs [] = {
+        // front face (+Z)
+        -64, -64,  64, 0,0,0,   0,   0,
+         64, -64,  64, 0,0,0, 255,   0,
+         64,  64,  64, 0,0,0, 255, 255,
+        -64,  64,  64, 0,0,0,   0, 255,
+        // back face (-Z)
+         64, -64, -64, 0,0,0,   0,   0,
+        -64, -64, -64, 0,0,0, 255,   0,
+        -64,  64, -64, 0,0,0, 255, 255,
+         64,  64, -64, 0,0,0,   0, 255,
+        // left face (-X)
+        -64, -64, -64, 0,0,0,   0,   0,
+        -64, -64,  64, 0,0,0, 255,   0,
+        -64,  64,  64, 0,0,0, 255, 255,
+        -64,  64, -64, 0,0,0,   0, 255,
+        // right face (+X)
+         64, -64,  64, 0,0,0,   0,   0,
+         64, -64, -64, 0,0,0, 255,   0,
+         64,  64, -64, 0,0,0, 255, 255,
+         64,  64,  64, 0,0,0,   0, 255,
+        // top face (+Y)
+        -64,  64,  64, 0,0,0,   0,   0,
+         64,  64,  64, 0,0,0, 255,   0,
+         64,  64, -64, 0,0,0, 255, 255,
+        -64,  64, -64, 0,0,0,   0, 255,
+        // bottom face (-Y)
+        -64, -64, -64, 0,0,0,   0,   0,
+         64, -64, -64, 0,0,0, 255,   0,
+         64, -64,  64, 0,0,0, 255, 255,
+        -64, -64,  64, 0,0,0,   0, 255,
+    };
+
+    static const unsigned idcs [] = {
+        // front
+        0, 1, 2,  0, 2, 3,
+        // back
+        4, 5, 6,  4, 6, 7,
+        // left
+        8, 9,10,  8,10,11,
+        // right
+       12,13,14, 12,14,15,
+        // top
+       16,17,18, 16,18,19,
+        // bottom
+       20,21,22, 20,22,23
+    };
+
+    static const unsigned nV = 24;
+    static const unsigned nI = 36;
+    
     GLuint VAO, VBO, EBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);

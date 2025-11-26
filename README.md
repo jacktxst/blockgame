@@ -42,23 +42,24 @@ the change in the affected blocks.
 
 ### Limitations and Problems
 
+- Camera bobbing effect is constant and annoying
 - Currently, only 256 block types are available.
-- The world can not yet be saved or loaded
 - The world is limited in size, however the engine is capable of more already
 - There are no entities and no block behavior
 - All blocks must be fully solid cubes
-- All faces of a block have the same texture
-- There is no main menu
 
 ### Future Plans
 
 - Infinite world
+- Optimized rendering
+- Multithreading support
+  - Create a thread pool
 - Documentation
-- Level saving and loading
 - Dynamic audio system
 - More image editing tools
 - Multiline text editing
 - In-game shader editing and compilation
 - Scripting system
 - Networking
+
 

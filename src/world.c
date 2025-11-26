@@ -5,7 +5,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "main.h"
+#include "voxels.h"
+#include <dirent.h>
+#include <sys/stat.h>
 
 
 int mod(int a, int b) {
@@ -46,17 +48,21 @@ voxel * getVoxelLocInWorld(struct world w, int x, int y, int z, struct chunk ** 
 }
 
 voxel getVoxelInWorld(struct world w, int x, int y, int z) {
+  
   voxel * loc = getVoxelLocInWorld(w,x,y,z,0,0);
+  
   if (!loc) return 0;
   return * loc;
 }
 
 voxel setVoxelInWorld(struct world w, int x, int y, int z, voxel v) {
   struct chunk * chunk;
-  voxel * loc = getVoxelLocInWorld(w,x,y,z,&chunk,0);
+  struct region * r;
+  voxel * loc = getVoxelLocInWorld(w,x,y,z,&chunk,&r);
   if (!loc) return 0;
   *loc = v;
-  voxelMeshData(chunk);
+  voxelMeshData(chunk, &w);
+  r->hasBeenModified = true;
   return 1;
 }
 
@@ -67,8 +73,14 @@ voxel getVoxelInChunk(voxel * voxels, int x, int y, int z) {
   unsigned index = (z * CHUNK_SIZE * CHUNK_SIZE) + (y * CHUNK_SIZE) + x;
   return voxels[index];
 }
-unsigned voxelMeshData(struct chunk * chunk) {
+
+unsigned voxelMeshData(struct chunk * chunk, struct world * world) {
   struct vertex { unsigned char x, y, z, w, vxl; };
+  if (!chunk->vao) {
+    glGenVertexArrays(1, &chunk->vao);
+    glGenBuffers(1, &chunk->vbo);
+    glGenBuffers(1, &chunk->ebo);
+  }
   // TODO: this is definitely not the right max size
   struct vertex * v = calloc(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE * 12, sizeof(struct vertex)); // can be static maybe?
   unsigned int * i  = calloc(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE * 18, sizeof(unsigned));
@@ -182,10 +194,87 @@ unsigned voxelMeshData(struct chunk * chunk) {
   return nI;
 }
 
+int saveWorld(struct world * w) {
+  // check if directory w->name exists
+  // if not, create.
+  mkdir(w->name, 0777);
+  // for each region in the world
+  struct region * r = w->loadedRegions;
+  while (r) {
+    if (r->hasBeenModified) {
+      char filename[256];
+      sprintf(filename, "%s/r%2d_%2d_%2d", w->name, r->x, r->y, r->z);
+      FILE * fptr = fopen(filename,"wb");
+
+      struct chunk * c = r->chunks;
+      while (c) {
+        struct chunk temp = *c;
+        temp.vao = 0;
+        temp.hasBeenModified = 0;
+        fwrite(&temp, sizeof(struct chunk), 1, fptr);
+        fwrite(c->voxels, sizeof(voxel), CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE, fptr );
+        c = c->next;
+      }
+      fclose(fptr);
+    }
+    r = r->next;
+  }
+}
+
+int loadWorld(struct world *w) {
+    struct stat st = {0};
+    if (stat(w->name, &st) != 0) {
+        printf("World directory '%s' does not exist\n", w->name);
+        return -1;
+    }
+    DIR *dir = opendir(w->name);
+    if (!dir) return -1;
+    struct dirent *ent;
+    while ((ent = readdir(dir))) {
+        if (ent->d_type != DT_REG) continue;
+        if (ent->d_name[0] != 'r') continue;
+        int rx, ry, rz;
+        if (sscanf(ent->d_name, "r%d_%d_%d", &rx, &ry, &rz) != 3)
+            continue;
+        char fullpath[256];
+        sprintf(fullpath, "%s/%s", w->name, ent->d_name);
+        FILE *fptr = fopen(fullpath, "rb");
+        if (!fptr) continue;
+        struct region *region = calloc(1, sizeof(struct region));
+        region->x = rx;
+        region->y = ry;
+        region->z = rz;
+        region->hasBeenModified = 0;
+        region->next = w->loadedRegions;
+        w->loadedRegions = region;
+
+        
+        while (1) {
+            struct chunk *chunk = malloc(sizeof(struct chunk));
+            size_t n = fread(chunk, sizeof(struct chunk), 1, fptr);
+            if (n != 1) {
+                free(chunk);
+                break; // EOF
+            }
+            // now read voxel data
+            chunk->voxels = malloc(sizeof(voxel) *
+                                   CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE);
+            fread(chunk->voxels, sizeof(voxel),
+                  CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE,
+                  fptr);
+            // link into region
+            chunk->next = region->chunks;
+            region->chunks = chunk;
+        }
+        fclose(fptr);
+    }
+    closedir(dir);
+    return 0;
+}
+
 void generChunk(struct world * w, int x, int y, int z) {
   ivec3 regionPos = {floor((double)x/REGION_SIZE),floor((double)y/REGION_SIZE),floor((double)z/REGION_SIZE)};
   ivec3 chunkPosInRegion = {mod(x,REGION_SIZE),mod(y,REGION_SIZE),mod(z,REGION_SIZE)};  
-
   struct region * checkRegion = w->loadedRegions;
   int regionWasFound = 0;
   while (checkRegion) {
@@ -193,6 +282,7 @@ void generChunk(struct world * w, int x, int y, int z) {
       checkRegion = checkRegion->next;
       continue;
     }
+    checkRegion->hasBeenModified = true;  
     regionWasFound = 1;
     break;
   }
@@ -207,6 +297,9 @@ void generChunk(struct world * w, int x, int y, int z) {
     .x=chunkPosInRegion.x,
     .y=chunkPosInRegion.y,
     .z=chunkPosInRegion.z,
+    .vao = 0,
+    .vbo = 0,
+    .ebo = 0,
     .next = checkRegion->chunks,
     .voxels = calloc(sizeof(voxel) * CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE, 1)
   };
@@ -224,26 +317,21 @@ void generChunk(struct world * w, int x, int y, int z) {
       }
     }
   }
-  
   checkRegion->chunks = newChunk;
-  glGenVertexArrays(1, &newChunk->vao);
-  glGenBuffers(1, &newChunk->vbo);
-  glGenBuffers(1, &newChunk->ebo);
-  voxelMeshData(newChunk);
 }
 
-struct world initTestWorld() {
-  struct world world = {
-    .loadedRegions = NULL
-  };
-  for (int x = -WORLD_SIZE; x < WORLD_SIZE; x++) {
-    for (int y = -WORLD_SIZE; y < WORLD_SIZE; y++) {
-      for (int z = -WORLD_SIZE; z < WORLD_SIZE; z++) {
-        generChunk(&world, x, y, z);
+void * createWorld(void * arg) {
+  struct world * w = (struct world *) arg;
+  w->loadedRegions = NULL;
+  for (int x = 0; x < (w->size_h); x++) {
+    for (int y = 0; y < (w->size_v); y++) {
+      for (int z = 0; z < (w->size_h); z++) {
+        generChunk(w, x - (w->size_h / 2), y - (w->size_v / 2), z - (w->size_h / 2));
+        w->creationProgress ++;
       }
     }
   }
-  return world;
+  w->creationProgress = -1;
 }
 
 // yo shout out chat gpt for this one (i revised it a lil bit tho)
@@ -328,54 +416,30 @@ int voxelRaycastPlace(
     return 0;
 }
 
-void drawWorld(struct world w, fvec3 pos, int dh, int dv) {
-    //printf("drawing world\n");
-    ivec3 chunkPos = (ivec3){floor((double)pos.x/CHUNK_SIZE), floor((double)pos.y/CHUNK_SIZE), floor((double)pos.z/CHUNK_SIZE)};
-    for (int x = chunkPos.x - dh; x <= chunkPos.x + dh; x++) {
-      for (int y = chunkPos.y - dv; y <= chunkPos.y + dv; y++) {
-        for (int z = chunkPos.z - dh; z <= chunkPos.z + dh; z++) {
-          //printf("attempting to draw chunk %d %d %d\n", x, y, z);
-          int regionX = floor((double)x/REGION_SIZE);
-          int regionY = floor((double)y/REGION_SIZE);
-          int regionZ = floor((double)z/REGION_SIZE);
-          ivec3 chunkPosInRegion = (ivec3){mod(x, REGION_SIZE), mod(y, REGION_SIZE), mod(z, REGION_SIZE)};
-
-          struct region * checkRegion = w.loadedRegions;
-          //printf("searching for region %d %d %d\n", regionX, regionY, regionZ);
-          while (checkRegion) {
-            
-            if (regionX != checkRegion->x || regionY != checkRegion->y || regionZ != checkRegion->z) {
-              checkRegion = checkRegion->next;
-              continue;
-            }
-            //printf("found region %d %d %d!\n", checkRegion->x, checkRegion->y, checkRegion->z);
-            struct chunk * checkChunk = checkRegion->chunks;
-            //printf("looking for chunk %d %d %d in region\n", chunkPosInRegion.x, chunkPosInRegion.y, chunkPosInRegion.z);
-            
-            while (checkChunk) {
-              if (chunkPosInRegion.x != checkChunk->x || chunkPosInRegion.y != checkChunk->y || chunkPosInRegion.z != checkChunk->z) {
-                //printf("wrong chunk: %d %d %d\n", checkChunk->x, checkChunk->y, checkChunk->z);
-                checkChunk = checkChunk->next;
-                continue;
-              }
-              //printf("FOUND A CHUNK FINALLY %d %d %d\n", checkChunk->x, checkChunk->y, checkChunk->z);
-              //printf("using program %d to render world chunk %d %d %d vao %d icount %d\n", w.shaderProgram, x, y, z, checkChunk->vao, checkChunk->icount);
-              glUseProgram(w.shaderProgram);
-              unsigned modelUniformLoc = glGetUniformLocation(w.shaderProgram, "model");
-              mat4 model; mat4Translate(model, x * CHUNK_SIZE, y * CHUNK_SIZE, z * CHUNK_SIZE); 
-              glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
-              glBindVertexArray(checkChunk->vao);
-              glActiveTexture(GL_TEXTURE0);
-              glBindTexture(GL_TEXTURE_2D_ARRAY, w.tex);
-              glDrawElements(GL_TRIANGLES, checkChunk->icount, GL_UNSIGNED_INT, 0);
-              glBindVertexArray(0);
-              break;
-            }
-            //printf("break\n");
-            break;
-          }
-        }
+// assumptions:
+// is supplied with projection and view matrices and texture
+void drawAllChunks(struct world * w, fvec3 pos) {
+  glUseProgram(w->shaderProgram);
+  unsigned modelUniformLoc = glGetUniformLocation(w->shaderProgram, "model");
+  struct region * r = w->loadedRegions;
+  struct chunk * c;
+  ivec3 chunkPos;
+  mat4 model;
+  while (r) {
+    c = r->chunks;
+    while (c) {
+      chunkPos = (ivec3){r->x * REGION_SIZE + c->x , r->y * REGION_SIZE + c->y, r->z * REGION_SIZE + c->z};
+      mat4Translate(model, chunkPos.x * CHUNK_SIZE, chunkPos.y * CHUNK_SIZE, chunkPos.z * CHUNK_SIZE); 
+      glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
+      if (!c->vao) {
+        voxelMeshData(c, w);
       }
+      glBindVertexArray(c->vao);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D_ARRAY, w->tex);
+      glDrawElements(GL_TRIANGLES, c->icount, GL_UNSIGNED_INT, 0);
+      c = c->next;
     }
-    return;
-};
+    r = r->next;
+  }
+}

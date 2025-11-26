@@ -11,9 +11,16 @@ uniform mat4 projection;  // Projection matrix
 
 out float brightness;          
 out float blockType;
+out float faceId;
 out vec2  uv;
 
 void main() {
+
+    vec3 lightDir = normalize(-1 * vec3(-0.5, -1, -0.25));
+    vec3 surfaceNorm;
+    float dirLightAmt = 0.8;
+    float ambientLight = 0.4;
+
     gl_Position = projection * view * model * vec4(aPos, 1.0);
     blockType = aBlockType;
     switch (aCode % 6) {
@@ -32,22 +39,31 @@ void main() {
     }
     switch (int(aCode / 6)) {
         case 0: // xpos
-            brightness = 0.125;
+            surfaceNorm = vec3(1.0, 0.0, 0.0);
+            faceId = 0.0;
             break;
         case 1: // xneg
-            brightness = 0.75;
+            surfaceNorm = vec3(-1.0, 0.0, 0.0);
+            faceId = 1.0;
             break;
         case 2: // ypos
-            brightness = 1.0;
+            surfaceNorm = vec3(0.0, 1.0, 0.0);
+            faceId = 2.0;
             break;
         case 3: // yneg
-            brightness = 0.125;
+            surfaceNorm = vec3(0.0, -1.0, 0.0);
+            faceId = 3.0;
             break;
         case 4: // zpos
-            brightness = 0.5;
+            surfaceNorm = vec3(0.0, 0.0, 1.0);
+            faceId = 4.0;
             break;
         default: // zneg
-            brightness = 0.25;
+            surfaceNorm = vec3(0.0, 0.0, -1.0);
+            faceId = 5.0;
             break;
     }
+    
+    float diffuse = max(dot(surfaceNorm, lightDir), 0.0);
+    brightness = ambientLight + dirLightAmt * diffuse;
 }
