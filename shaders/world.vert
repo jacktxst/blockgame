@@ -6,17 +6,21 @@ layout(location = 1) in int aCode;
 layout(location = 2) in int aBlockType;    
 
 uniform mat4 model;       // Model matrix
+uniform vec3 chunkPos;
 uniform mat4 view;        // View matrix
 uniform mat4 projection;  // Projection matrix
+uniform vec3 sunDir;
 
 out float brightness;          
 out float blockType;
 out float faceId;
 out vec2  uv;
+out vec3 fragPos;
 
 void main() {
 
-    vec3 lightDir = normalize(-1 * vec3(-0.5, -1, -0.25));
+    fragPos = aPos + chunkPos;
+    vec3 lightDir = normalize(sunDir);
     vec3 surfaceNorm;
     float dirLightAmt = 0.8;
     float ambientLight = 0.4;

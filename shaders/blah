@@ -1,0 +1,64 @@
+if( int(mod((fragPos.x/16+time) , 2 )) == 0) {
+        if(int(mod((fragPos.z/16+time) , 2)) == 0) {
+                baseColor = vec4(0.0,0.0,0.0,1.0);
+        }
+    } else {
+        if(int(mod((fragPos.z/16+time) , 2)) == 1) {
+                baseColor = vec4(0.0,0.0,0.0,1.0);
+        }
+    } 
+    
+    baseColor.r *= tan(fragPos.x+time);
+    baseColor.g *= tan(fragPos.y+time);
+    baseColor.b *= tan(fragPos.z+time);
+    
+    baseColor.r *= tan(fragPos.x+time);
+    baseColor.g *= tan(fragPos.y-time);
+    baseColor.b *= tan(fragPos.z+time);
+            
+       if(int(mod((fragPos.x+(time))  , 2)) == 0) {baseColor.r = 0;}
+       if(int(mod((fragPos.y+(time))  , 2)) == 0) {baseColor.g = 0;}
+       if(int(mod((fragPos.z+(time))  , 2)) == 0) {baseColor.b = 0;}   
+       
+       if(int(mod((fragPos.x*log(time))  , 2.5)) == 0) {baseColor.r = sin(time+fragPos.y);}
+       if(int(mod((fragPos.y*sqrt(time)) , 2.5)) == 0) {baseColor.g = 0;}
+       if(int(mod((fragPos.z*log(time))  , 2.5)) == 0) {baseColor.b = sin(time);}  
+           
+       if(int(mod((fragPos.x*log(time))  , PI)) == 0) {baseColor.r = sin(time+fragPos.y);}
+       if(int(mod((fragPos.y*sqrt(time)) , PI)) == 0) {baseColor.g = 0;}
+       if(int(mod((fragPos.z*log(time))  , PI)) == 0) {baseColor.b = sin(time);}
+	
+	    if(int(mod((fragPos.x*log(time))  , PI)) == 0) {baseColor.r = sin(time+fragPos.y);}
+        //if(int(mod((fragPos.y*sqrt(time)) , PI)) == 0) {baseColor.g = 0;}
+        baseColor.g *= tan(fragPos.y+time);
+        if(int(mod((fragPos.z*log(time))  , PI)) == 0) {baseColor.b = cos(cos(time));}
+            
+        if(int(mod((fragPos.x*log(time))  , 0.001)) == 0) {baseColor.r = sin(time+fragPos.y);}
+        //if(int(mod((fragPos.y*sqrt(time)) , 0.001)) == 0) {baseColor.g = 0;}
+        baseColor.g *= tan(fragPos.y+time);
+        if(int(mod((fragPos.z*log(time))  , 0.001)) == 0) {baseColor.b = cos(cos(time));}    
+	
+	    if(int(mod((fragPos.x*log(time))  , 0.001)) == 0) {baseColor.r = sin(time+fragPos.y);}
+        //if(int(mod((fragPos.y*sqrt(time)) , 0.001)) == 0) {baseColor.g = 0;}
+        baseColor.g *= tan(fragPos.y+sqrt(time))+sqrt(fragPos.x*time);
+        if(int(mod((fragPos.z*log(time))  , 0.001)) == 0) {baseColor.b = cos(cos(time));}
+            
+            
+       if(int(mod((fragPos.x*log(time))  , 0.001)) == 0) {baseColor.r = tan(length(fragPos))*pow(sin(pow(time,time)),0.0001);}
+       //if(int(mod((fragPos.y*sqrt(time)) , 0.001)) == 0) {baseColor.g = 0;}
+       if(int(mod((fragPos.y*sqrt(time)) , 0.001)) == 0) {baseColor.g *= tan(0.009*length(fragPos)+sqrt(time));}
+       if(int(mod((fragPos.z*atan(time))  , 0.001)) == 0) {baseColor.b = log(cos(cos(time)));} 
+	
+	    if(int(mod((fragPos.x+(time))  , 2)) == 0) {baseColor.r = 0;}
+                   if(int(mod((fragPos.y+(time))  , 2)) == 0) {baseColor.g = 0;}
+                   if(int(mod((fragPos.z+(time))  , 2)) == 0) {baseColor.b = 0;}  
+	
+    if( int(mod((fragPos.x/16+time) , 2 )) == 0) {
+        if(int(mod((fragPos.z/16+time) , 2)) == 0) {
+                baseColor = vec4(0.0,0.0,0.0,1.0);
+        }
+    } else {
+        if(int(mod((fragPos.z/16+time) , 2)) == 1) {
+                baseColor = vec4(0.0,0.0,0.0,1.0);
+        }
+    } 	    
