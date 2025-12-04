@@ -15,7 +15,28 @@ int mod(int a, int b) {
   return (r < 0) ? r + b : r;
 }
 
-voxel * getVoxelLocInWorld(struct world w, int x, int y, int z, struct chunk ** outChunk, struct region ** outRegion) {
+
+
+int enqueueChunk(struct chunk_queue *queue, struct chunk *chunk) {
+  int next = (queue->rear + 1) % CHUNK_QUEUE_SIZE;
+  if (next == queue->front) {
+    return -1;
+  }
+  queue->chunkRefArray[queue->rear] = chunk;
+  queue->rear = next;
+  return 0;
+}
+
+struct chunk *dequeueChunk(struct chunk_queue *queue) {
+  if (queue->front == queue->rear) {
+    return NULL;
+  }
+  struct chunk *result = queue->chunkRefArray[queue->front];
+  queue->front = (queue->front + 1) % CHUNK_QUEUE_SIZE;
+  return result;
+}
+
+voxel * getVoxelAddr(struct world w, int x, int y, int z, struct chunk ** outChunk, struct region ** outRegion) {
   int regionX = floor(floor((double)x / CHUNK_SIZE) / (double)REGION_SIZE);
   int regionY = floor(floor((double)y / CHUNK_SIZE) / (double)REGION_SIZE);
   int regionZ = floor(floor((double)z / CHUNK_SIZE) / (double)REGION_SIZE);
@@ -31,6 +52,7 @@ voxel * getVoxelLocInWorld(struct world w, int x, int y, int z, struct chunk ** 
       checkRegion = checkRegion->next;
       continue;
     }
+    if (outRegion) *outRegion = checkRegion;
     struct chunk * checkChunk = checkRegion->chunks;
     while (checkChunk) {
       if (chunkPosInRegion.x != checkChunk->x || chunkPosInRegion.y != checkChunk->y || chunkPosInRegion.z != checkChunk->z) {
@@ -39,7 +61,8 @@ voxel * getVoxelLocInWorld(struct world w, int x, int y, int z, struct chunk ** 
       }
       unsigned index = (blockPosInChunk.z * CHUNK_SIZE * CHUNK_SIZE) + (blockPosInChunk.y * CHUNK_SIZE) + blockPosInChunk.x;
       if (outChunk) *outChunk = checkChunk;
-      if (outRegion) *outRegion = checkRegion;
+      if (!checkChunk->voxels) 
+        return NULL;
       return checkChunk->voxels+index;
     }
     return 0;
@@ -48,129 +71,260 @@ voxel * getVoxelLocInWorld(struct world w, int x, int y, int z, struct chunk ** 
 }
 
 voxel getVoxelInWorld(struct world w, int x, int y, int z) {
-  
-  voxel * loc = getVoxelLocInWorld(w,x,y,z,0,0);
-  
+  voxel * loc = getVoxelAddr(w,x,y,z,0,0);
   if (!loc) return 0;
   return * loc;
 }
 
-voxel setVoxelInWorld(struct world w, int x, int y, int z, voxel v) {
-  struct chunk * chunk;
-  struct region * r;
-  voxel * loc = getVoxelLocInWorld(w,x,y,z,&chunk,&r);
-  if (!loc) return 0;
-  *loc = v;
-  voxelMeshData(chunk, &w);
-  r->hasBeenModified = true;
-  return 1;
-}
+voxel setVoxelInWorld(struct world * w, int x, int y, int z, voxel v, struct chunk_queue * meshing_queue) {
+  struct chunk * chunk = NULL;
+  struct region * r = NULL;
+  voxel * loc = getVoxelAddr(*w,x,y,z,&chunk,&r);
+  if (!loc) {
+    if (!r) return 0;
+    struct chunk * newEmptyChunk = calloc(1, sizeof(struct chunk));
+    
+    newEmptyChunk->voxels = calloc(CHUNK_SIZE*CHUNK_SIZE*CHUNK_SIZE,sizeof(voxel));
+    newEmptyChunk->parentRegion = r;
+    newEmptyChunk->parentWorld = w;
+    newEmptyChunk->x = mod((int)floor((double)x / CHUNK_SIZE) , REGION_SIZE);
+    newEmptyChunk->y = mod((int)floor((double)y / CHUNK_SIZE) , REGION_SIZE);
+    newEmptyChunk->z = mod((int)floor((double)z / CHUNK_SIZE) , REGION_SIZE);
+    
+    newEmptyChunk->next = r->chunks;
+    r->chunks = newEmptyChunk;
+    r = NULL, chunk = NULL;
 
-// used only by voxelMeshData()
-voxel getVoxelInChunk(voxel * voxels, int x, int y, int z) {
-  if (x < 0 || y < 0 || z < 0) { return 0; }
-  if (x >= CHUNK_SIZE || y >= CHUNK_SIZE || z >= CHUNK_SIZE) { return 0; }
+    loc = getVoxelAddr(*w,x,y,z,&chunk,&r);
+    if (!loc) return 0;
+  }
+    *loc = v;
+    if (!chunk->needsRemesh)
+      if (!chunk->inMeshQueue)
+        if (enqueueChunk(meshing_queue, chunk))
+          chunk->inMeshQueue = 1;;//voxelMeshData(chunk, &w);
+    chunk->needsRemesh = 1;
+    r->hasBeenModified = true;
+
+    return 1;
+  }
+
+
+
+/* get the value of a block inside a chunk using chunk-relative
+ * coordinates for coordinates outside of the chunk, the world
+ * gets searched, which is a slightly more expensive process.
+ */
+voxel getVoxelInChunk(struct chunk * chunk, int x, int y, int z) {
+  if (x < 0 || y < 0 || z < 0 || x >= CHUNK_SIZE || y >= CHUNK_SIZE || z >= CHUNK_SIZE) {
+    ivec3 world_pos = {
+      x + chunk->x * CHUNK_SIZE + ((struct region *)chunk->parentRegion)->x*REGION_SIZE*CHUNK_SIZE ,
+      y + chunk->y * CHUNK_SIZE + ((struct region *)chunk->parentRegion)->y*REGION_SIZE*CHUNK_SIZE,
+      z + chunk->z * CHUNK_SIZE + ((struct region *)chunk->parentRegion)->z*REGION_SIZE*CHUNK_SIZE};
+    return getVoxelInWorld(*(struct world*)chunk->parentWorld, world_pos.x, world_pos.y, world_pos.z);
+  }
   unsigned index = (z * CHUNK_SIZE * CHUNK_SIZE) + (y * CHUNK_SIZE) + x;
-  return voxels[index];
+  return chunk->voxels[index];
 }
 
 unsigned voxelMeshData(struct chunk * chunk, struct world * world) {
+  if (chunk->voxels == NULL) return 0;
   struct vertex { unsigned char x, y, z, w, vxl; };
   if (!chunk->vao) {
     glGenVertexArrays(1, &chunk->vao);
     glGenBuffers(1, &chunk->vbo);
     glGenBuffers(1, &chunk->ebo);
   }
+  
+  if (!chunk->vao_transparent) {
+    glGenVertexArrays(1, &chunk->vao_transparent);
+    glGenBuffers(1, &chunk->vbo_transparent);
+    glGenBuffers(1, &chunk->ebo_transparent);
+  }
+  
   // TODO: this is definitely not the right max size
+  // TODO: should DEFINITELY be static
   struct vertex * v = calloc(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE * 12, sizeof(struct vertex)); // can be static maybe?
   unsigned int * i  = calloc(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE * 18, sizeof(unsigned));
+
+  static struct vertex * vertices_transparent = 0;
+  static unsigned int * indices_transparent = 0;
+  if (!vertices_transparent) {
+    indices_transparent = calloc(CHUNK_SIZE * CHUNK_SIZE * 18, sizeof(unsigned));
+    vertices_transparent = calloc(CHUNK_SIZE * CHUNK_SIZE * 18, sizeof(struct vertex));
+  }
+  
   unsigned char x, y, z;
-  unsigned nV = 0;
-  unsigned nI = 0;
+  unsigned numVertices = 0, numVerticesTransparent = 0;
+  unsigned numIndices = 0, numIndicesTransparent = 0;
  
   for (x = 0;x < CHUNK_SIZE; x++) {
     for (y = 0; y < CHUNK_SIZE; y++) {
       for (z = 0; z < CHUNK_SIZE; z++) {
-        voxel vxl = getVoxelInChunk(chunk->voxels, x, y, z );
-        if (!vxl) continue;
+        voxel voxel_current = getVoxelInChunk(chunk, x, y, z);
+        if (!voxel_current) continue; 
+
+        voxel voxel_east  = getVoxelInChunk(chunk, x+1, y  , z );
+        voxel voxel_west  = getVoxelInChunk(chunk, x-1, y  , z );
+        voxel voxel_above = getVoxelInChunk(chunk, x  , y+1, z );
+        voxel voxel_below = getVoxelInChunk(chunk, x  , y-1, z );
+        voxel voxel_south = getVoxelInChunk(chunk, x  , y  , z+1 );
+        voxel voxel_north = getVoxelInChunk(chunk, x  , y  , z-1 );
         
-        if (!getVoxelInChunk(chunk->voxels, x+1, y  , z )) {
-          v[nV] = (struct vertex){x+1, y  , z  , (0 * 6) + 0, vxl }; nV++;
-          v[nV] = (struct vertex){x+1, y+1, z  , (0 * 6) + 1, vxl }; nV++;
-          v[nV] = (struct vertex){x+1, y  , z+1, (0 * 6) + 2, vxl }; nV++;
-          v[nV] = (struct vertex){x+1, y+1, z+1, (0 * 6) + 3, vxl }; nV++;
-          i[nI] = nV-4; nI++;
-          i[nI] = nV-3; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-1; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-3; nI++;
+        if (!voxel_east || (voxel_east == 6 && voxel_current != 6)) {
+          if (voxel_current == 6) {
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y  , z  , (0 * 6) + 0, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y+1, z  , (0 * 6) + 1, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y  , z+1, (0 * 6) + 2, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y+1, z+1, (0 * 6) + 3, voxel_current }; numVerticesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-4; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-1; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+          } else {
+            v[numVertices] = (struct vertex){x+1, y  , z  , (0 * 6) + 0, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y+1, z  , (0 * 6) + 1, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y  , z+1, (0 * 6) + 2, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y+1, z+1, (0 * 6) + 3, voxel_current }; numVertices++;
+            i[numIndices] = numVertices-4; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-1; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+          }
         }
         
-        if (!getVoxelInChunk(chunk->voxels, x-1, y  , z )) {
-          
-          v[nV] = (struct vertex){x, y  , z  , (1 * 6) + 0, vxl }; nV++;
-          v[nV] = (struct vertex){x, y+1, z  , (1 * 6) + 1, vxl }; nV++;
-          v[nV] = (struct vertex){x, y  , z+1, (1 * 6) + 2, vxl }; nV++;
-          v[nV] = (struct vertex){x, y+1, z+1, (1 * 6) + 3, vxl }; nV++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-3; nI++;
-          i[nI] = nV-4; nI++;
-          i[nI] = nV-3; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-1; nI++;
+        if (!voxel_west || (voxel_west == 6 && voxel_current != 6)) {
+          if (voxel_current == 6) {
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y  , z  , (1 * 6) + 0, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y+1, z  , (1 * 6) + 1, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y  , z+1, (1 * 6) + 2, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y+1, z+1, (1 * 6) + 3, voxel_current }; numVerticesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-4; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-1; numIndicesTransparent++;
+          } else {
+            v[numVertices] = (struct vertex){x, y  , z  , (1 * 6) + 0, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x, y+1, z  , (1 * 6) + 1, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x, y  , z+1, (1 * 6) + 2, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x, y+1, z+1, (1 * 6) + 3, voxel_current }; numVertices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+            i[numIndices] = numVertices-4; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-1; numIndices++;
+          }  
         }
         
-        if (!getVoxelInChunk(chunk->voxels, x  , y+1, z   )) {
-          v[nV] = (struct vertex){x  , y+1, z  , (2 * 6) + 0, vxl }; nV++;
-          v[nV] = (struct vertex){x  , y+1, z+1, (2 * 6) + 1, vxl }; nV++;
-          v[nV] = (struct vertex){x+1, y+1, z  , (2 * 6) + 2, vxl }; nV++;
-          v[nV] = (struct vertex){x+1, y+1, z+1, (2 * 6) + 3, vxl }; nV++;
-          i[nI] = nV-4; nI++;
-          i[nI] = nV-3; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-1; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-3; nI++;
+        if (!voxel_above || (voxel_above == 6 && voxel_current != 6)) {
+          if (voxel_current == 6) {
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y+1, z  , (2 * 6) + 0, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y+1, z+1, (2 * 6) + 1, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y+1, z  , (2 * 6) + 2, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y+1, z+1, (2 * 6) + 3, voxel_current }; numVerticesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-4; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-1; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+          } else {
+            v[numVertices] = (struct vertex){x  , y+1, z  , (2 * 6) + 0, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x  , y+1, z+1, (2 * 6) + 1, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y+1, z  , (2 * 6) + 2, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y+1, z+1, (2 * 6) + 3, voxel_current }; numVertices++;
+            i[numIndices] = numVertices-4; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-1; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+          }
         }
         
-        if (!getVoxelInChunk(chunk->voxels, x  , y-1, z   )) {
-          v[nV] = (struct vertex){x  , y, z  , (3 * 6) + 0, vxl }; nV++;
-          v[nV] = (struct vertex){x+1, y, z  , (3 * 6) + 1, vxl }; nV++;
-          v[nV] = (struct vertex){x  , y, z+1, (3 * 6) + 2, vxl }; nV++;
-          v[nV] = (struct vertex){x+1, y, z+1, (3 * 6) + 3, vxl }; nV++;
-          i[nI] = nV-4; nI++;
-          i[nI] = nV-3; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-1; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-3; nI++;
+        if (!voxel_below || (voxel_below == 6 && voxel_current != 6)) {
+          if (voxel_current == 6) {
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y  , z  , (3 * 6) + 0, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y  , z  , (3 * 6) + 1, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y  , z+1, (3 * 6) + 2, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y  , z+1, (3 * 6) + 3, voxel_current }; numVerticesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-4; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-1; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+          } else {
+            v[numVertices] = (struct vertex){x  , y, z  , (3 * 6) + 0, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y, z  , (3 * 6) + 1, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x  , y, z+1, (3 * 6) + 2, voxel_current }; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y, z+1, (3 * 6) + 3, voxel_current }; numVertices++;
+            i[numIndices] = numVertices-4; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-1; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+          }
         }
         
-        if (!getVoxelInChunk(chunk->voxels, x  , y  , z+1)) {
-          v[nV] = (struct vertex){x  , y  , z+1, (4 * 6) + 0, vxl}; nV++;
-          v[nV] = (struct vertex){x  , y+1, z+1, (4 * 6) + 1, vxl}; nV++;
-          v[nV] = (struct vertex){x+1, y  , z+1, (4 * 6) + 2, vxl}; nV++;
-          v[nV] = (struct vertex){x+1, y+1, z+1, (4 * 6) + 3, vxl}; nV++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-3; nI++;
-          i[nI] = nV-4; nI++;
-          i[nI] = nV-3; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-1; nI++;
+        if (!voxel_south || (voxel_south == 6 && voxel_current != 6)) {
+          if (voxel_current == 6) {
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y  , z+1, (4 * 6) + 0, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y+1, z+1, (4 * 6) + 1, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y  , z+1, (4 * 6) + 2, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y+1, z+1, (4 * 6) + 3, voxel_current }; numVerticesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-4; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-1; numIndicesTransparent++;
+          } else {
+            v[numVertices] = (struct vertex){x  , y  , z+1, (4 * 6) + 0, voxel_current}; numVertices++;
+            v[numVertices] = (struct vertex){x  , y+1, z+1, (4 * 6) + 1, voxel_current}; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y  , z+1, (4 * 6) + 2, voxel_current}; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y+1, z+1, (4 * 6) + 3, voxel_current}; numVertices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+            i[numIndices] = numVertices-4; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-1; numIndices++;
+          }
         }
         
-        if (!getVoxelInChunk(chunk->voxels, x  , y  , z-1 )) {
-          v[nV] = (struct vertex){x  , y  , z  , (5 * 6) + 0, vxl}; nV++;
-          v[nV] = (struct vertex){x  , y+1, z  , (5 * 6) + 1, vxl}; nV++;
-          v[nV] = (struct vertex){x+1, y  , z  , (5 * 6) + 2, vxl}; nV++;
-          v[nV] = (struct vertex){x+1, y+1, z  , (5 * 6) + 3, vxl}; nV++;
-          i[nI] = nV-4; nI++;
-          i[nI] = nV-3; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-1; nI++;
-          i[nI] = nV-2; nI++;
-          i[nI] = nV-3; nI++;
+        if (!voxel_north || (voxel_north == 6 && voxel_current != 6)) {
+          if (voxel_current == 6) {
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y  , z  , (5 * 6) + 0, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x  , y+1, z  , (5 * 6) + 1, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y  , z  , (5 * 6) + 2, voxel_current }; numVerticesTransparent++;
+            vertices_transparent[numVerticesTransparent] = (struct vertex){x+1, y+1, z  , (5 * 6) + 3, voxel_current }; numVerticesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-4; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-1; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-2; numIndicesTransparent++;
+            indices_transparent[numIndicesTransparent] = numVerticesTransparent-3; numIndicesTransparent++;
+          } else {
+            v[numVertices] = (struct vertex){x  , y  , z  , (5 * 6) + 0, voxel_current}; numVertices++;
+            v[numVertices] = (struct vertex){x  , y+1, z  , (5 * 6) + 1, voxel_current}; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y  , z  , (5 * 6) + 2, voxel_current}; numVertices++;
+            v[numVertices] = (struct vertex){x+1, y+1, z  , (5 * 6) + 3, voxel_current}; numVertices++;
+            i[numIndices] = numVertices-4; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-1; numIndices++;
+            i[numIndices] = numVertices-2; numIndices++;
+            i[numIndices] = numVertices-3; numIndices++;
+          }
         }
       }
     }
@@ -178,9 +332,22 @@ unsigned voxelMeshData(struct chunk * chunk, struct world * world) {
   
   glBindVertexArray(chunk->vao);    
   glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
-  glBufferData(GL_ARRAY_BUFFER, nV * sizeof(struct vertex), v, GL_DYNAMIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, numVertices * sizeof(struct vertex), v, GL_DYNAMIC_DRAW);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
-  glBufferData(GL_ELEMENT_ARRAY_BUFFER, nI * sizeof(unsigned int), i, GL_DYNAMIC_DRAW);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, numIndices * sizeof(unsigned int), i, GL_DYNAMIC_DRAW);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_BYTE, GL_FALSE, sizeof(struct vertex), (void*)0);
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 1, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(struct vertex), (void*)3);
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 1, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(struct vertex), (void*)4);
+  glBindVertexArray(0);
+  
+  glBindVertexArray(chunk->vao_transparent);    
+  glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo_transparent);
+  glBufferData(GL_ARRAY_BUFFER, numVerticesTransparent * sizeof(struct vertex), vertices_transparent, GL_DYNAMIC_DRAW);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo_transparent);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, numIndicesTransparent * sizeof(unsigned int), indices_transparent, GL_DYNAMIC_DRAW);
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_BYTE, GL_FALSE, sizeof(struct vertex), (void*)0);
   glEnableVertexAttribArray(1);
@@ -190,31 +357,43 @@ unsigned voxelMeshData(struct chunk * chunk, struct world * world) {
   glBindVertexArray(0);
   free(v);
   free(i);
-  chunk->icount = nI;
-  return nI;
+  chunk->icount = numIndices;
+  chunk->icount_transparent = numIndicesTransparent;
+  return numIndices;
 }
 
+/* save "worldinfo" and region files.
+   other data like player data must
+   be saved separately.
+*/ 
 int saveWorld(struct world * w) {
-  // check if directory w->name exists
-  // if not, create.
   mkdir(w->name, 0777);
-  // for each region in the world
+  
+  char filename[128];
+  sprintf(filename, "%s/worldinfo", w->name);
+  FILE * fptr = fopen(filename,"wb");
+  const char dummy = 1; // world version
+  fwrite(&dummy, 1, 1, fptr);
+  fclose(fptr);
+
   struct region * r = w->loadedRegions;
   while (r) {
     if (r->hasBeenModified) {
       char filename[256];
       sprintf(filename, "%s/r%2d_%2d_%2d", w->name, r->x, r->y, r->z);
       FILE * fptr = fopen(filename,"wb");
-
       struct chunk * c = r->chunks;
       while (c) {
-        struct chunk temp = *c;
-        temp.vao = 0;
-        temp.hasBeenModified = 0;
-        fwrite(&temp, sizeof(struct chunk), 1, fptr);
+        if (!c->voxels) { c = c->next; continue; }
+        struct chunk_file chunk_file;
+        chunk_file.x = c->x;
+        chunk_file.y = c->y;
+        chunk_file.z = c->z;
+        fwrite(&chunk_file, sizeof(struct chunk_file), 1, fptr);
         fwrite(c->voxels, sizeof(voxel), CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE, fptr );
         c = c->next;
       }
+      r->hasBeenModified = 0;
       fclose(fptr);
     }
     r = r->next;
@@ -222,13 +401,14 @@ int saveWorld(struct world * w) {
 }
 
 int loadWorld(struct world *w) {
-    struct stat st = {0};
-    if (stat(w->name, &st) != 0) {
-        printf("World directory '%s' does not exist\n", w->name);
-        return -1;
-    }
     DIR *dir = opendir(w->name);
-    if (!dir) return -1;
+    char worldinfo_fnbuff[64];
+    sprintf(worldinfo_fnbuff, "%s/worldinfo", w->name);
+    FILE * fptr = fopen(worldinfo_fnbuff, "rb");
+    unsigned char version;
+    fread(&version, 1, 1, fptr);
+    fclose(fptr);
+    if (!dir) exit(678);
     struct dirent *ent;
     while ((ent = readdir(dir))) {
         if (ent->d_type != DT_REG) continue;
@@ -239,32 +419,56 @@ int loadWorld(struct world *w) {
         char fullpath[256];
         sprintf(fullpath, "%s/%s", w->name, ent->d_name);
         FILE *fptr = fopen(fullpath, "rb");
-        if (!fptr) continue;
+        if (!fptr) exit(679);
         struct region *region = calloc(1, sizeof(struct region));
         region->x = rx;
         region->y = ry;
         region->z = rz;
-        region->hasBeenModified = 0;
+        region->hasBeenModified = version == 0 ? 1 : 0;
         region->next = w->loadedRegions;
         w->loadedRegions = region;
-
-        
         while (1) {
-            struct chunk *chunk = malloc(sizeof(struct chunk));
-            size_t n = fread(chunk, sizeof(struct chunk), 1, fptr);
-            if (n != 1) {
+            if (version == 0) {
+              struct legacy_chunk legacy_chunk;
+              size_t n = fread(&legacy_chunk, sizeof(struct legacy_chunk), 1, fptr);
+              if (n != 1) 
+                break;
+              struct chunk *chunk = malloc(sizeof(struct chunk));
+              chunk->x = legacy_chunk.x;
+              chunk->y = legacy_chunk.y;
+              chunk->z = legacy_chunk.z;
+              chunk->parentWorld = w;
+              chunk->parentRegion = region;
+              chunk->voxels = malloc(sizeof(voxel) * CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE);
+              fread(chunk->voxels, sizeof(voxel),CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE, fptr);
+              chunk->next = region->chunks;
+              region->chunks = chunk;
+            } else {
+              struct chunk_file chunk_file;
+              size_t n = fread(&chunk_file, sizeof(struct chunk_file), 1, fptr);
+              if (n != 1) 
+                break;
+              struct chunk *chunk = malloc(sizeof(struct chunk));
+              chunk->x = chunk_file.x;
+              chunk->y = chunk_file.y;
+              chunk->z = chunk_file.z;
+              chunk->parentWorld = w;
+              chunk->parentRegion = region;
+              chunk->voxels = malloc(sizeof(voxel) * CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE);
+              fread(chunk->voxels, sizeof(voxel),CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE, fptr);
+              int chunkIsEmpty = 1;
+              for(int i = 0; i < CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE; i++) {
+                  if (chunk->voxels[i]) {chunkIsEmpty = 0; break;}
+              }
+              if (chunkIsEmpty) {
+                free(chunk->voxels);
+                chunk->voxels = NULL;
                 free(chunk);
-                break; // EOF
+                continue;
+              }
+              chunk->next = region->chunks;
+              region->chunks = chunk;
             }
-            // now read voxel data
-            chunk->voxels = malloc(sizeof(voxel) *
-                                   CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE);
-            fread(chunk->voxels, sizeof(voxel),
-                  CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE,
-                  fptr);
-            // link into region
-            chunk->next = region->chunks;
-            region->chunks = chunk;
         }
         fclose(fptr);
     }
@@ -272,7 +476,51 @@ int loadWorld(struct world *w) {
     return 0;
 }
 
-void generChunk(struct world * w, int x, int y, int z) {
+void freeWorld(struct world * w) {
+  struct region * r = w->loadedRegions;
+  while (r) {
+    struct chunk * chunk = r->chunks;
+    while (chunk) {
+      free(chunk->voxels);
+
+      glDeleteVertexArrays(1, &chunk->vao);
+      glDeleteBuffers(1, &chunk->vbo);
+      glDeleteBuffers(1, &chunk->ebo);
+      glDeleteVertexArrays(1, &chunk->vao_transparent);
+      glDeleteBuffers(1, &chunk->vbo_transparent);
+      glDeleteBuffers(1, &chunk->ebo_transparent);
+      
+      struct chunk * chunkFree = chunk;
+      chunk = chunk->next;
+      free(chunkFree);
+    }
+    struct region * rFree = r;
+    r = r->next;
+    free(rFree);
+  }
+  w->loadedRegions = NULL;
+}
+
+struct chunk * generChunkHeightmap(struct world * w, int x, int y, int z) {
+
+  static int * noiseMap2D = 0;
+  if (!noiseMap2D) {
+    noiseMap2D = malloc(sizeof(int) * CHUNK_SIZE * CHUNK_SIZE);
+  }
+
+  for (int bx = 0; bx < CHUNK_SIZE; bx++) {
+    for (int bz = 0; bz < CHUNK_SIZE; bz++) {
+      float perlin2d_octaves(float x, float y, int octaves, float persistence);
+      float perlin2d(float x, float y);
+      const float xzScale = 0.0015; // 0.02
+      const float yScale = 480; // 80
+      int octaves = 6;
+      float persp = 0.5;
+      float perlinValue = perlin2d_octaves((x * CHUNK_SIZE + bx) * xzScale, (z * CHUNK_SIZE + bz) * xzScale, octaves, persp);
+      noiseMap2D[(bz * CHUNK_SIZE) + bx] = yScale * perlinValue;
+    }
+  }
+  
   ivec3 regionPos = {floor((double)x/REGION_SIZE),floor((double)y/REGION_SIZE),floor((double)z/REGION_SIZE)};
   ivec3 chunkPosInRegion = {mod(x,REGION_SIZE),mod(y,REGION_SIZE),mod(z,REGION_SIZE)};  
   struct region * checkRegion = w->loadedRegions;
@@ -300,24 +548,32 @@ void generChunk(struct world * w, int x, int y, int z) {
     .vao = 0,
     .vbo = 0,
     .ebo = 0,
+    .parentWorld = w,
+    .parentRegion = checkRegion,
     .next = checkRegion->chunks,
     .voxels = calloc(sizeof(voxel) * CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE, 1)
   };
-  int perlin3d_binary(float x, float y, float z, float threshold);
   unsigned max = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
-  float scale = 0.01f;       // controls "size" of terrain features
-  float threshold = 0.0f;   // controls density
   for (int bx = 0; bx < CHUNK_SIZE; bx++) {
     for (int by = 0; by < CHUNK_SIZE; by++) {
       for (int bz = 0; bz < CHUNK_SIZE; bz++) {
-        float fx = (x * CHUNK_SIZE + bx) * scale;
-        float fy = (y * CHUNK_SIZE + by) * scale;
-        float fz = (z * CHUNK_SIZE + bz) * scale;
-        newChunk->voxels[(bz * CHUNK_SIZE * CHUNK_SIZE) + (by * CHUNK_SIZE) + bx] = perlin3d_binary(fx, fy, fz, threshold);
+        int surfaceDepth = noiseMap2D[bz * CHUNK_SIZE + bx] - (by + y * CHUNK_SIZE);
+        voxel v;
+
+        if (surfaceDepth < 0) {
+          v = y * CHUNK_SIZE + by >= 0 ? 0 : 0;// 0 : 6
+          
+        } else if (surfaceDepth < 3) {
+          v = 1;
+        } else {
+          v = 2;
+        }
+        newChunk->voxels[(bz * CHUNK_SIZE * CHUNK_SIZE) + (by * CHUNK_SIZE) + bx] = v;
       }
     }
   }
   checkRegion->chunks = newChunk;
+  return newChunk;
 }
 
 void * createWorld(void * arg) {
@@ -326,7 +582,7 @@ void * createWorld(void * arg) {
   for (int x = 0; x < (w->size_h); x++) {
     for (int y = 0; y < (w->size_v); y++) {
       for (int z = 0; z < (w->size_h); z++) {
-        generChunk(w, x - (w->size_h / 2), y - (w->size_v / 2), z - (w->size_h / 2));
+        generChunkHeightmap(w, x - (w->size_h / 2), y - (w->size_v / 2), z - (w->size_h / 2));
         w->creationProgress ++;
       }
     }
@@ -418,28 +674,75 @@ int voxelRaycastPlace(
 
 // assumptions:
 // is supplied with projection and view matrices and texture
-void drawAllChunks(struct world * w, fvec3 pos) {
+
+
+void drawAllChunks(struct world * w, struct chunk_queue * meshing_queue) {
   glUseProgram(w->shaderProgram);
-  unsigned modelUniformLoc = glGetUniformLocation(w->shaderProgram, "model");
+  
+  unsigned modelUniformLoc    = glGetUniformLocation(w->shaderProgram, "model");
+  unsigned chunkPosUniformLoc = glGetUniformLocation(w->shaderProgram, "chunkPos");
+  
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D_ARRAY, w->tex);
+  
   struct region * r = w->loadedRegions;
-  struct chunk * c;
+  struct chunk * c = NULL;
   ivec3 chunkPos;
   mat4 model;
+  /* draw solid world */
   while (r) {
     c = r->chunks;
     while (c) {
+      if (c->voxels == NULL) {c = c->next; continue;}
       chunkPos = (ivec3){r->x * REGION_SIZE + c->x , r->y * REGION_SIZE + c->y, r->z * REGION_SIZE + c->z};
-      mat4Translate(model, chunkPos.x * CHUNK_SIZE, chunkPos.y * CHUNK_SIZE, chunkPos.z * CHUNK_SIZE); 
+      mat4Translate(model, chunkPos.x * CHUNK_SIZE, chunkPos.y * CHUNK_SIZE, chunkPos.z * CHUNK_SIZE);
+      // TODO : eliminate one of these uniforms because its totally redundant
+      glUseProgram(w->shaderProgram);
       glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
+      glUniform3f(chunkPosUniformLoc, chunkPos.x * CHUNK_SIZE, chunkPos.y * CHUNK_SIZE, chunkPos.z * CHUNK_SIZE);
       if (!c->vao) {
-        voxelMeshData(c, w);
+        if (!c->inMeshQueue)
+          if (enqueueChunk(meshing_queue, c))
+            c->inMeshQueue = 1;
+
+        /* this is what id like to do but its really slow for some reason
+        c = c->next;
+        continue;
+        */
+        return; // so i do this instead
       }
+      
       glBindVertexArray(c->vao);
-      glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_2D_ARRAY, w->tex);
+      
       glDrawElements(GL_TRIANGLES, c->icount, GL_UNSIGNED_INT, 0);
       c = c->next;
     }
     r = r->next;
   }
+  transparent:
+  /* draw transparent world */
+  r = w->loadedRegions;
+  while (r) {
+    c = r->chunks;
+    while (c) {
+      if (c->voxels == NULL) {c = c->next; continue;};
+      if (!c->vao) {c = c->next; continue;};
+      chunkPos = (ivec3){r->x * REGION_SIZE + c->x , r->y * REGION_SIZE + c->y, r->z * REGION_SIZE + c->z};
+      mat4Translate(model, chunkPos.x * CHUNK_SIZE, chunkPos.y * CHUNK_SIZE, chunkPos.z * CHUNK_SIZE);
+      // TODO : eliminate one of these uniforms because its totally redundant
+      glUseProgram(w->shaderProgram);
+      glUniformMatrix4fv(modelUniformLoc, 1, GL_FALSE, model);
+      glUniform3f(chunkPosUniformLoc, chunkPos.x * CHUNK_SIZE, chunkPos.y * CHUNK_SIZE, chunkPos.z * CHUNK_SIZE);
+      
+      glBindVertexArray(c->vao_transparent);
+      
+      glDrawElements(GL_TRIANGLES, c->icount_transparent, GL_UNSIGNED_INT, 0);
+      c = c->next;
+    }
+    r = r->next;
+  }
+
+  // 
+
+  
 }

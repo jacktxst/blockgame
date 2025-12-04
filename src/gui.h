@@ -2,35 +2,6 @@
 // Created by jack lewis on 11/15/25.
 //
 
-// MINIMALISTIC IMMEDIATE MODE SINGLE HEADER GUI LIBRARY FOR C
-// I'm pretty happy with this.
-
-// Pure immediate mode GUI system
-// Current features
-//   drawText
-//   drawRect
-//   slider
-//   checkbox
-//   atlasedit
-//   colorpicker
-//   textfield
-//   button
-//   button_once
-// todo
-//  textfield
-//   draw multiple lines
-//   allow selection
-//   blinking cursor
-//   click anywhere on it
-//  atlasedit
-//   multiple layers
-//   fill
-//   blending
-//  z layers
-//  textbox
-//  dropdown
-//  radio button
-
 #ifndef TEXT_H
 #define TEXT_H
 #include <GL/glew.h>
@@ -40,12 +11,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CHAR_W 6
-#define CHAR_H 6
-#define FONT_W 8
-#define FONT_H 12
+#define KXGUI_CHAR_W 6
+#define KXGUI_CHAR_H 6
+#define KXGUI_FONT_COLS 8
+#define KXGUI_FONT_ROWS 12
 
-static const char * font =
+#define KXGUI_DEBUG
+static float KXGUI_UNIT_QUAD_VERTS[8] = {
+  0.0f, 0.0f,
+  1.0f, 0.0f,
+  0.0f, 1.0f,
+  1.0f, 1.0f
+};
+static const char * KXGUI_FONT =
 "         #    # #   # #  ##### ##  #   #     #  \n"
 "         #    # #  ##### # #   ## #   # #    #  \n"
 "         #          # #  #####   #    ## #      \n"
@@ -118,180 +96,152 @@ static const char * font =
 "   #    ###    #   ##      #      ## # #        \n"
 "  # #     #   ####  #      #      #             \n"
 "         #           ##    #    ##              \n";
-static const char * textVertexShaderSrc =
+static const char * glyphVertShaderSrc =
 "#version 330 core\n"
 "layout(location = 0) in vec2 aPos;         \n"
 "uniform ivec2 screen_size;                 \n"
-"uniform int   char_index;                  \n"
 "uniform ivec2 origin;                      \n"
+"uniform int   z;\n"
 "uniform ivec2 scale;                       \n"
+"\n"
 "uniform ivec2 font_size;                   \n"
+"uniform int   char_index;                  \n"
 "uniform ivec2 char_size;                   \n"
+"\n"
 "out     vec2  uv;\n"
 "void main() {\n"
-"  // Convert integer pixel position to normalized device coords\n"
-"  vec2 ndc = vec2(aPos * char_size * scale + origin) / vec2(screen_size) * 2.0 - 1.0;\n"
-"  // Flip Y because OpenGL NDC Y+ is up\n"
-"  ndc.y = -ndc.y;\n"
-"  gl_Position = vec4(ndc, 0.0, 1.0);\n"
+"  gl_Position = vec4((vec2(aPos*char_size*scale+origin)/vec2(screen_size)*2.0-1.0)*vec2(1,-1),float(z)/16.0,1.0);\n"
 "\n"
-"  // Compute glyph cell UV in atlas\n"
 "  int col = char_index % font_size.x;\n"
 "  int row = char_index / font_size.x;\n"
 "  vec2 glyphSize = vec2(1.0 / float(font_size.x), 1.0 / float(font_size.y));\n"
 "  vec2 glyphUV = vec2(float(col), float(row)) * glyphSize;\n"
 "  uv = aPos * glyphSize + vec2(col, row) * glyphSize;\n"
 " }\n";
-static const char * textFragmentShaderSrc =
+static const char * glyphFragShaderSrc =
 "#version 330 core\n"
 "in vec2 uv;\n"
 "out vec4 fragColor;\n"
 "uniform sampler2D tex;\n"
 "void main(){\n"
 "    float a = texture(tex, uv).r;\n"
-"    fragColor = vec4(uv, 1.0, a);\n"
+"    fragColor = vec4(uv, 1.0, a);\n" // using the uv for the color here creates a unique stylistic effect (bad for readability)
 "}\n";
-static const char * texRectVertexShaderSrc =
+static const char * rectVertShaderSrc =
 "#version 330 core\n"
 "layout(location = 0) in vec2 aPos;         \n"
 "uniform ivec2 screen_size;                 \n"
 "uniform ivec2 origin;                      \n"
 "uniform ivec2 scale;                       \n"
+"uniform int   z;"
 "out     vec2  uv;\n"
 "void main() {\n"
-"  // Convert integer pixel position to normalized device coords\n"
-"  vec2 ndc = vec2(aPos * scale + origin) / vec2(screen_size) * 2.0 - 1.0;\n"
-"  // Flip Y because OpenGL NDC Y+ is up\n"
-"  ndc.y = -ndc.y;\n"
-"  gl_Position = vec4(ndc, 0.0, 1.0);\n"
+"  gl_Position = vec4((vec2(aPos*scale+origin)/vec2(screen_size)*2.0-1.0)*vec2(1,-1),float(z)/16.0,1.0);\n"
 "  uv = aPos;\n"
 " }\n";
-static const char * texRectFragmentShaderSrc =
+static const char * atlasRectFragShaderSrc =
 "#version 330 core\n"
 "in vec2 uv;\n"
 "out vec4 fragColor;\n"
 "uniform sampler2DArray tex;\n"
 "uniform int textureIndex;\n"
 "void main(){\n"
-"    fragColor = vec4(texture(tex, vec3(uv, textureIndex)));\n"
+"    fragColor = vec4(texture(tex, vec3(uv, textureIndex)).rgb, 1.0);\n"
 "}\n";
-static const char * rectVertexShaderSrc =
-"#version 330 core\n"
-"layout(location = 0) in vec2 aPos;         \n"
-"uniform ivec2 screen_size;                 \n"
-"uniform ivec2 origin;                      \n"
-"uniform ivec2 scale;                       \n"
-"void main() {\n"
-"  // Convert integer pixel position to normalized device coords\n"
-"  vec2 ndc = vec2(aPos * scale + origin) / vec2(screen_size) * 2.0 - 1.0;\n"
-"  // Flip Y because OpenGL NDC Y+ is up\n"
-"  ndc.y = -ndc.y;\n"
-"  gl_Position = vec4(ndc, 0.0, 1.0);\n"
-"}\n";
-static const char * rectFragmentShaderSrc =
+static const char * colorRectFragShaderSrc =
 "#version 330 core\n"
 "out vec4 fragColor;\n"
-"uniform uint color;\n"
-"vec4 uintToRGBA(uint color) {\n"
-"     float a = float((color >> 24) & 0xFFu) / 255.0;\n"
-"     float r = float((color >> 16) & 0xFFu) / 255.0;\n"
-"     float g = float((color >> 8)  & 0xFFu) / 255.0;\n"
-"     float b = float(color & 0xFFu) / 255.0;\n"
-"     return vec4(r, g, b, a);\n"
-"}\n"
+"uniform vec4 color;\n"
 "void main(){\n"
-"    fragColor = uintToRGBA(color);\n"
+"    fragColor = color;\n"
 "}\n";
-
-void drawRect(int x, int y, int w, int h, int screenWidth, int screenHeight, unsigned color) {
+static void drawColorRect(int x, int y, int z, int w, int h, int screenW, int screenH,
+  float red, float green, float blue, float alpha) {
   static GLuint
-  program = 0,
+  colorRectShaderProg = 0,
   vao = 0,
   vbo = 0,
   screenSizeLoc = 0,
+  zLoc = 0,
   scaleLoc = 0,
   colorLoc = 0,
   originLoc = 0;
-  if (!program) {
+  if (!colorRectShaderProg) {
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &rectVertexShaderSrc, NULL);
+    glShaderSource(vertexShader, 1, &rectVertShaderSrc, NULL);
     glCompileShader(vertexShader);
     GLint ok = 0;
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &ok);
     if (!ok) {
       char log[512];
       glGetShaderInfoLog(vertexShader, sizeof(log), NULL, log);
-      fprintf(stderr, "v shader compile error: %s\n", log);
+      fprintf(stderr, "vertex shader compile error: %s\n", log);
       exit(1);
     }
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &rectFragmentShaderSrc, NULL);
+    glShaderSource(fragmentShader, 1, &colorRectFragShaderSrc, NULL);
     glCompileShader(fragmentShader);
     ok = 0;
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &ok);
     if (!ok) {
       char log[512];
       glGetShaderInfoLog(fragmentShader, sizeof(log), NULL, log);
-      fprintf(stderr, "f shader compile error: %s\n", log);
+      fprintf(stderr, "frag shader compile error: %s\n", log);
       exit(1);
     }
-    program = glCreateProgram();
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, fragmentShader);
-    glLinkProgram(program);
+    colorRectShaderProg = glCreateProgram();
+    glAttachShader(colorRectShaderProg, vertexShader);
+    glAttachShader(colorRectShaderProg, fragmentShader);
+    glLinkProgram(colorRectShaderProg);
     ok = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    glGetProgramiv(colorRectShaderProg, GL_LINK_STATUS, &ok);
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
     if (!ok) {
       char log[512];
-      glGetProgramInfoLog(program, sizeof(log), NULL, log);
+      glGetProgramInfoLog(colorRectShaderProg, sizeof(log), NULL, log);
       fprintf(stderr, "shader program link error: %s\n", log);
       exit(1);
     }
-    glUseProgram(program);
-    colorLoc = glGetUniformLocation(program, "color");
-    screenSizeLoc = glGetUniformLocation(program, "screen_size");
-    originLoc = glGetUniformLocation(program, "origin");
-    scaleLoc = glGetUniformLocation(program, "scale");
-    // create vao and vbo
+    glUseProgram(colorRectShaderProg);
+    colorLoc = glGetUniformLocation(colorRectShaderProg, "color");
+    screenSizeLoc = glGetUniformLocation(colorRectShaderProg, "screen_size");
+    originLoc = glGetUniformLocation(colorRectShaderProg, "origin");
+    scaleLoc = glGetUniformLocation(colorRectShaderProg, "scale");
+    zLoc = glGetUniformLocation(colorRectShaderProg, "z");
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    float vertices[8] = {
-      0.0f, 0.0f,
-      1.0f, 0.0f,
-      0.0f, 1.0f,
-      1.0f, 1.0f
-    };
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, KXGUI_UNIT_QUAD_VERTS, GL_STATIC_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(0);
   }
   glBindVertexArray(vao);
-  glUseProgram(program);
+  glUseProgram(colorRectShaderProg);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glDisable(GL_CULL_FACE);
   glUniform2i(scaleLoc, w, h);
-  glUniform1ui(colorLoc, color);
-  glUniform2i(screenSizeLoc, screenWidth, screenHeight);
+  glUniform1i(zLoc, z);
+  glUniform4f(colorLoc, red, green, blue, alpha);
+  glUniform2i(screenSizeLoc, screenW, screenH);
   glUniform2i(originLoc, x, y);
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 };
-void drawTexturedRect(int x, int y, int w, int h, int screenWidth, int screenHeight, unsigned texture, unsigned index) {
+static void drawTexturedRect(int x, int y, int z, int w, int h, int screenWidth, int screenHeight, unsigned texture, unsigned index) {
   static GLuint
   program = 0,
   vao = 0,
   vbo = 0,
   screenSizeLoc = 0,
   scaleLoc = 0,
+  zLoc = 0,
   originLoc = 0,
   textureIndexLoc = 0;
   if (!program) {
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &texRectVertexShaderSrc, NULL);
+    glShaderSource(vertexShader, 1, &rectVertShaderSrc, NULL);
     glCompileShader(vertexShader);
     GLint ok = 0;
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &ok);
@@ -302,7 +252,7 @@ void drawTexturedRect(int x, int y, int w, int h, int screenWidth, int screenHei
       exit(1);
     }
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &texRectFragmentShaderSrc, NULL);
+    glShaderSource(fragmentShader, 1, &atlasRectFragShaderSrc, NULL);
     glCompileShader(fragmentShader);
     ok = 0;
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &ok);
@@ -332,18 +282,12 @@ void drawTexturedRect(int x, int y, int w, int h, int screenWidth, int screenHei
     screenSizeLoc = glGetUniformLocation(program, "screen_size");
     originLoc = glGetUniformLocation(program, "origin");
     scaleLoc = glGetUniformLocation(program, "scale");
-    // create vao and vbo
+    zLoc = glGetUniformLocation(program, "z");
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    float vertices[8] = {
-      0.0f, 0.0f,
-      1.0f, 0.0f,
-      0.0f, 1.0f,
-      1.0f, 1.0f
-    };
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, KXGUI_UNIT_QUAD_VERTS, GL_STATIC_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(0);
   }
@@ -354,51 +298,43 @@ void drawTexturedRect(int x, int y, int w, int h, int screenWidth, int screenHei
   glDisable(GL_CULL_FACE);
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
-  glUniform1i(textureIndexLoc, index);
+  glUniform1i(zLoc, z);
   glUniform2i(scaleLoc, w, h);
-  glUniform2i(screenSizeLoc, screenWidth, screenHeight);
   glUniform2i(originLoc, x, y);
+  glUniform2i(screenSizeLoc, screenWidth, screenHeight);
+  glUniform1i(textureIndexLoc, index);
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 };
-void drawText(const char * text, int x, int y, int screenWidth, int screenHeight, int scaleX, int scaleY) {
+static void drawText(const char * text, int x, int y, int z, int screenWidth, int screenHeight, int scaleX, int scaleY) {
   static GLuint
   texture = 0,
   program = 0,
   vao = 0,
   vbo = 0,
+  zLoc = 0,
   screenSizeLoc = 0,
   charIndexLoc = 0,
   scaleLoc = 0,
+  hasBeenInitialized = 0,
   originLoc = 0;
-  if (!texture) {
-    unsigned textureWidth  = CHAR_W * FONT_W;
-    unsigned textureHeight = CHAR_H * FONT_H;
+  if (!hasBeenInitialized) {
+    unsigned textureWidth  = KXGUI_CHAR_W * KXGUI_FONT_COLS;
+    unsigned textureHeight = KXGUI_CHAR_H * KXGUI_FONT_ROWS;
     unsigned textureSize   = textureWidth * textureHeight;
     unsigned char * fontPixels = malloc(textureSize);
     for (int i = 0; i < textureSize; i++) {
-      if (!font[i + (int)(i/textureWidth)]) break;
-      fontPixels[i] = font[i + (int)(i/textureWidth)] == ' ' ? 0x00 : 0xFF;
+      if (!KXGUI_FONT[i + (int)(i/textureWidth)]) break;
+      fontPixels[i] = KXGUI_FONT[i + (int)(i/textureWidth)] == ' ' ? 0x00 : 0xFF;
     }
     glGenTextures(1, &texture);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    glTexImage2D(
-    GL_TEXTURE_2D,      // target
-    0,                  // mip level
-    GL_R8,              // internal format: 8-bit single channel (red)
-    textureWidth,       // texture width
-    textureHeight,      // texture height
-    0,                  // border (must be 0)
-    GL_RED,             // format of your data: single channel
-    GL_UNSIGNED_BYTE,   // type of your data: 1 byte per pixel
-    fontPixels          // pointer to the pixel data
-    );
+    glTexImage2D(GL_TEXTURE_2D,0,GL_R8,textureWidth,textureHeight,0,GL_RED,GL_UNSIGNED_BYTE,fontPixels);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &textVertexShaderSrc, NULL);
+    glShaderSource(vertexShader, 1, &glyphVertShaderSrc, NULL);
     glCompileShader(vertexShader);
     GLint ok = 0;
     glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &ok);
@@ -409,7 +345,7 @@ void drawText(const char * text, int x, int y, int screenWidth, int screenHeight
       exit(1);
     }
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &textFragmentShaderSrc, NULL);
+    glShaderSource(fragmentShader, 1, &glyphFragShaderSrc, NULL);
     glCompileShader(fragmentShader);
     ok = 0;
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &ok);
@@ -434,29 +370,23 @@ void drawText(const char * text, int x, int y, int screenWidth, int screenHeight
       exit(1);
     }
     glUseProgram(program);
-    
     glUniform1i(glGetUniformLocation(program, "tex"), 0); // Tell shader to use unit 0
-    glUniform2i(glGetUniformLocation(program, "font_size"), FONT_W, FONT_H); // Tell shader to use unit 0
-    glUniform2i(glGetUniformLocation(program, "char_size"), CHAR_W, CHAR_H); // Tell shader to use unit 0
-    screenSizeLoc = glGetUniformLocation(program, "screen_size");
-    charIndexLoc = glGetUniformLocation(program, "char_index");
-    originLoc = glGetUniformLocation(program, "origin");
-    scaleLoc = glGetUniformLocation(program, "scale");
+    glUniform2i(glGetUniformLocation(program, "font_size"), KXGUI_FONT_COLS, KXGUI_FONT_ROWS); // Tell shader to use unit 0
+    glUniform2i(glGetUniformLocation(program, "char_size"), KXGUI_CHAR_W, KXGUI_CHAR_H); // Tell shader to use unit 0
+    screenSizeLoc =   glGetUniformLocation(program, "screen_size");
+    charIndexLoc =    glGetUniformLocation(program, "char_index");
+    originLoc =       glGetUniformLocation(program, "origin");
+    scaleLoc =        glGetUniformLocation(program, "scale");
+    zLoc =            glGetUniformLocation(program, "z");
     // create vao and vbo
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    
-    float vertices[8] = {
-      0.0f, 0.0f,
-      1.0f, 0.0f,
-      0.0f, 1.0f,
-      1.0f, 1.0f
-    };
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, vertices, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 8, KXGUI_UNIT_QUAD_VERTS, GL_DYNAMIC_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(0);
+    hasBeenInitialized = 1;
   }
   glBindVertexArray(vao);
   glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -469,47 +399,72 @@ void drawText(const char * text, int x, int y, int screenWidth, int screenHeight
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, texture);
   for (int i=0; text[i]; i++) {
-    
-    // this array needs to work for a gl triangle fan
     glUniform1i(charIndexLoc, text[i]-32);
     glUniform2i(originLoc, x, y);
+    glUniform1i(zLoc, z);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    x += CHAR_W * scaleX;
+    x += KXGUI_CHAR_W * scaleX;
   }
 }
-
 typedef enum {GUI_LAYOUT_MANUAL, GUI_LAYOUT_AUTO} gui_layout;
-
 struct guictx {
   int screenWidth, screenHeight; // screenwidth and screenheight
   int mx, my, mb; // mouse x, mouse y, mouse button boolean
   int textScaleX, textScaleY; // text scaling
-  
+  float gui_scale;
   unsigned char typedChar;
   int * keys; // glfw keys
   gui_layout layout;
+  unsigned layoutFlags;
   int layoutX, layoutY;
+  int rowHeight;
+  int top, bottom, left, right;
   int spacing;
 };
-
 typedef struct  {
   char * buffer;
   int cursorPos;
   int focused;
 } textfield_t;
 
-// textfield_t ipAddrTextfield = {0}
-// textfield(&ctx, &ipAddrTextfield, 600, 400, "ip", "ok");
-//textfield(&ctx, 600, 400,"ip", &ipBuffer, &cursorPos, &focused, "ok");
+static void kxguiLayoutFunc(struct guictx * ctx, int * x, int * y, int w, int h) {
+  if (ctx->layout == GUI_LAYOUT_AUTO) {
+    if (ctx->layoutX + w + ctx->spacing > ctx->right) {
+      ctx->layoutX = ctx->left + ctx->spacing;
+      ctx->layoutY += ctx->rowHeight + ctx->spacing;
+    }
+    *x = ctx->layoutX; *y = ctx->layoutY;
+    ctx->layoutX += w + ctx->spacing;
+    if (h > ctx->rowHeight) ctx->rowHeight = h;
+  }
+}
+
+void kxguiNewline(struct guictx * ctx) {
+  ctx->layoutX = ctx->left + ctx->spacing;
+  ctx->layoutY += ctx->rowHeight + ctx->spacing;
+  ctx->rowHeight = 0;
+}
+
+void textlabel(struct guictx * ctx, char * buffer, int x, int y, char * tooltip) {
+  kxguiLayoutFunc(ctx, &x, &y, strlen(buffer) * KXGUI_CHAR_W * ctx->textScaleX, KXGUI_CHAR_H * ctx->textScaleY);
+  drawText(buffer, x * ctx->gui_scale, y * ctx->gui_scale, 0, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX * ctx->gui_scale, ctx->textScaleY * ctx->gui_scale);
+  if (x * ctx->gui_scale < ctx->mx && ctx->mx < (x+(1+strlen(buffer))*KXGUI_CHAR_W*ctx->textScaleX) * ctx->gui_scale && y * ctx->gui_scale < ctx->my && ctx->my < (y+KXGUI_CHAR_H*ctx->textScaleY) * ctx->gui_scale) {
+    drawText(tooltip,ctx->mx+15*ctx->gui_scale,ctx->my+15*ctx->gui_scale, -0.5, ctx->screenWidth,ctx->screenHeight,6*ctx->gui_scale,6*ctx->gui_scale);
+  }
+}
 
 void textfield(struct guictx * ctx, textfield_t * tf, int x, int y, char * str, int maxLength, char * tooltip) {
+  
   static int wasMouseClicked = 0;
   if (!tf->buffer) {
     tf->buffer = (char *) malloc(strlen(str) + 1);
     strcpy(tf->buffer, str);
   }
-  drawText(tf->buffer, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
-  drawRect(x + (tf->cursorPos * CHAR_W * ctx->textScaleX), y, 1*ctx->textScaleX, CHAR_H*ctx->textScaleY, ctx->screenWidth, ctx->screenHeight, 0xFFFFFFFF);
+
+  kxguiLayoutFunc(ctx, &x, &y, strlen(tf->buffer) * KXGUI_CHAR_W * ctx->textScaleX, KXGUI_CHAR_H * ctx->textScaleY);
+  
+  drawText(tf->buffer,x*ctx->gui_scale,y*ctx->gui_scale,0,ctx->screenWidth,ctx->screenHeight,ctx->textScaleX * ctx->gui_scale, ctx->textScaleY * ctx->gui_scale);
+  drawColorRect(x*ctx->gui_scale+(tf->cursorPos*KXGUI_CHAR_W*ctx->textScaleX)*ctx->gui_scale,y*ctx->gui_scale,0,1*ctx->textScaleX * ctx->gui_scale, KXGUI_CHAR_H*ctx->textScaleY * ctx->gui_scale, ctx->screenWidth, ctx->screenHeight, 1, 1, 1, 1);
   if (tf->focused && ctx->typedChar) { 
     unsigned length = strlen(tf->buffer);
     if (maxLength < 0 ? 0 : length == maxLength) return;
@@ -533,11 +488,11 @@ void textfield(struct guictx * ctx, textfield_t * tf, int x, int y, char * str, 
     memmove(tf->buffer + tf->cursorPos, tf->buffer + tf->cursorPos + 1, length - tf->cursorPos);
     tf->buffer = (char *) realloc(tf->buffer, length);
   }
-  if (x < ctx->mx && ctx->mx < x+(1+strlen(tf->buffer))*CHAR_W*ctx->textScaleX && y < ctx->my && ctx->my < y+CHAR_H*ctx->textScaleY) {
-    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
+  if (x * ctx->gui_scale < ctx->mx && ctx->mx < (x+(1+strlen(tf->buffer))*KXGUI_CHAR_W*ctx->textScaleX) * ctx->gui_scale && y * ctx->gui_scale < ctx->my && ctx->my < (y+KXGUI_CHAR_H*ctx->textScaleY)  * ctx->gui_scale) {
+    drawText(tooltip,ctx->mx+15*ctx->gui_scale,ctx->my+15*ctx->gui_scale,-0.5,ctx->screenWidth,ctx->screenHeight,6*ctx->gui_scale,6*ctx->gui_scale);
     if (ctx->mb && !wasMouseClicked) {
       tf->focused = 1;
-      tf->cursorPos = (ctx->mx - x) / (CHAR_W * ctx->textScaleX);
+      tf->cursorPos = (ctx->mx - x * ctx->gui_scale) / ((KXGUI_CHAR_W * ctx->textScaleX) * ctx->gui_scale);
       int len = strlen(tf->buffer);
       if (tf->cursorPos > len) {
         tf->cursorPos = len;
@@ -547,65 +502,74 @@ void textfield(struct guictx * ctx, textfield_t * tf, int x, int y, char * str, 
     if (ctx->mb) wasMouseClicked = 1;
   } else if (ctx->mb && !wasMouseClicked) {tf->focused  = 0;}
 }
-
+// todo get rid of magic numbers
 void slider(struct guictx * ctx, int x, int y, double * value, float min, float max, char * tooltip) {
-  drawRect(x,y,256,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
-  drawRect(x+   (    (*value-min)/(max-min)*256+min    ) ,y,64,64,ctx->screenWidth,ctx->screenHeight,0xFF000000);
-  if (x < ctx->mx && ctx->mx < x+256 && y < ctx->my && ctx->my < y+64) {
+#define KXGUI_SLIDER_W 256
+#define KXGUI_SLIDER_H 64
+  kxguiLayoutFunc(ctx, &x, &y, KXGUI_SLIDER_W, KXGUI_SLIDER_H);
+  drawColorRect(x*ctx->gui_scale,y*ctx->gui_scale,0,KXGUI_SLIDER_W*ctx->gui_scale,KXGUI_SLIDER_H*ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,1,1,1,1);
+  drawColorRect(x*ctx->gui_scale+((*value-min)/(max-min)*KXGUI_SLIDER_W+min)*ctx->gui_scale,y*ctx->gui_scale,-1,KXGUI_SLIDER_H*ctx->gui_scale,KXGUI_SLIDER_H*ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,0,0,0,1);
+  if (x*ctx->gui_scale<ctx->mx&&ctx->mx<(x+KXGUI_SLIDER_W)*ctx->gui_scale&&y*ctx->gui_scale<ctx->my&&ctx->my<(y+KXGUI_SLIDER_H)*ctx->gui_scale) {
     char buffer[40];
-    sprintf(buffer, "%f %s", (ctx->mx-x)/256.0*(max-min)+min, tooltip );
-    drawText(buffer,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
+    sprintf(buffer, "%f %s", *value, tooltip );
+    drawColorRect(        ctx->mx*ctx->gui_scale+15,ctx->my*ctx->gui_scale+15,-10, strlen(buffer) * KXGUI_CHAR_W * ctx->textScaleX * ctx->gui_scale, KXGUI_CHAR_H * ctx->textScaleY * ctx->gui_scale, ctx->screenWidth, ctx->screenHeight, 0,0,0,1);
+    drawText     (buffer,ctx->mx*ctx->gui_scale+15,ctx->my*ctx->gui_scale+15,-14,ctx->screenWidth,ctx->screenHeight,ctx->textScaleX * ctx->gui_scale,ctx->textScaleY * ctx->gui_scale);
+    
     if (ctx->mb) {
-      *value = (ctx->mx-x)/256.0*(max-min)+min;
+      *value = (ctx->mx-x*ctx->gui_scale)/(256*ctx->gui_scale) * (max-min) + min;
     }
   }
 }
-
 void colorpicker(struct guictx * ctx, int x, int y, unsigned * value, char * tooltip) {
 
-  unsigned char a = (*value >> 24) & 0xFF;
-  unsigned char b = (*value >> 16) & 0xFF;
-  unsigned char g = (*value >> 8)  & 0xFF;
-  unsigned char r = (*value)       & 0xFF;
+  kxguiLayoutFunc(ctx, &x, &y, 256, 264);
+  
+  unsigned char r = (*value >> 24) & 0xFF;
+  unsigned char g = (*value >> 16) & 0xFF;
+  unsigned char b = (*value >> 8)  & 0xFF;
+  unsigned char a = (*value)       & 0xFF;
     
-  drawRect(x,y,256,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
-  drawRect(x+ r ,y,64,64,ctx->screenWidth,ctx->screenHeight,0xFFFF0000);
-  if (x <= ctx->mx && ctx->mx < x+256 && y < ctx->my && ctx->my < y+64) {
-    drawText("r",ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
+  drawColorRect(x*ctx->gui_scale,y*ctx->gui_scale,0,KXGUI_SLIDER_W*ctx->gui_scale,64*ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,1,1,1,1);
+  drawColorRect((x+r)*ctx->gui_scale,y*ctx->gui_scale,-1,64*ctx->gui_scale,64*ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,1,0,0,1);
+  if (x*ctx->gui_scale<=ctx->mx&&ctx->mx<(x+KXGUI_SLIDER_W)*ctx->gui_scale&&y*ctx->gui_scale<ctx->my&&ctx->my<(y+64)*ctx->gui_scale) {
+    drawText(tooltip,ctx->mx+15,ctx->my+15,0,ctx->screenWidth,ctx->screenHeight,6,6);
     if (ctx->mb) {
-      r = ctx->mx-x;
+      r = (ctx->mx-x*ctx->gui_scale)/ctx->gui_scale;
     }
   }
 
-  drawRect(x,y+100,256,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
-  drawRect(x+ g ,y+100,64,64,ctx->screenWidth,ctx->screenHeight,0xFF00FF00);
-  if (x <= ctx->mx && ctx->mx < x+256 && y+100 < ctx->my && ctx->my < y+64+100) {
-    drawText("g",ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
+  drawColorRect(x*ctx->gui_scale,(y+100)*ctx->gui_scale,0,KXGUI_SLIDER_W*ctx->gui_scale,64*ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,1,1,1,1);
+  drawColorRect((x+g)*ctx->gui_scale,(y+100)*ctx->gui_scale,-1,64*ctx->gui_scale,64*ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,0,1,0,1);
+  if (x*ctx->gui_scale<=ctx->mx&&ctx->mx<(x+KXGUI_SLIDER_W)*ctx->gui_scale&&(y+100)*ctx->gui_scale<ctx->my&&ctx->my<(y+64+100)*ctx->gui_scale) {
+    drawText(tooltip,ctx->mx+15,ctx->my+15,-16,ctx->screenWidth,ctx->screenHeight,6,6);
     if (ctx->mb) {
-      g = ctx->mx-x;
+      g = (ctx->mx-x*ctx->gui_scale)/ctx->gui_scale;
     }
   }
 
-  drawRect(x,y+200,256,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
-  drawRect(x+ b ,y+200,64,64,ctx->screenWidth,ctx->screenHeight,0xFF0000FF);
-  if (x <= ctx->mx && ctx->mx < x+256 && y+200 < ctx->my && ctx->my < y+64+200) {
-    drawText("b",ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
+  drawColorRect(x*ctx->gui_scale,(y+200)*ctx->gui_scale,0,KXGUI_SLIDER_W*ctx->gui_scale,KXGUI_SLIDER_H * ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,1,1,1,1);
+  drawColorRect((x+b)*ctx->gui_scale,(y+200)*ctx->gui_scale,-1,KXGUI_SLIDER_H*ctx->gui_scale,KXGUI_SLIDER_H * ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,0,0,1,1);
+  if (x*ctx->gui_scale<=ctx->mx&&ctx->mx<(x+256)*ctx->gui_scale&&(y+200)*ctx->gui_scale<ctx->my&&ctx->my<(y+64+200)*ctx->gui_scale) {
+    drawText(tooltip,ctx->mx+15,ctx->my+15,-16,ctx->screenWidth,ctx->screenHeight,6,6);
     if (ctx->mb) {
-      b = ctx->mx-x;
+      b = (ctx->mx-x*ctx->gui_scale)/ctx->gui_scale;
     }
   }
 
-  *value = (a << 24) | (b << 16) | (g << 8) | r;
+  *value = (r << 24) | (g << 16) | (b << 8) | a;
 }
 
 void checkbox(struct guictx * ctx, int x, int y, int * value, char * tooltip) {
+
+  kxguiLayoutFunc(ctx, &x, &y, 64, 64);
+
   static int wasMouseClicked = 0;
-  drawRect(x   ,y,64,64,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
-  drawRect(x+ 4,y+ 4,56,56,ctx->screenWidth,ctx->screenHeight,0xFF000000);
-  drawRect(x+ 8,y+ 8,48,48,ctx->screenWidth,ctx->screenHeight,0xFFFFFFFF);
-  if (*value != 0) drawRect(x+12,y+12,40,40,ctx->screenWidth,ctx->screenHeight,0xFF000000);
-  if (x < ctx->mx && ctx->mx < x+64 && y < ctx->my && ctx->my < y+64) {
-    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
+  drawColorRect(x * ctx->gui_scale,y * ctx->gui_scale,0,64 * ctx->gui_scale,64 * ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,1,1,1,1);
+  drawColorRect((x+4)*ctx->gui_scale,(y+4)*ctx->gui_scale,-1,56*ctx->gui_scale,56*ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,0,0,0,1);
+  drawColorRect((x+8)*ctx->gui_scale,(y+8)*ctx->gui_scale,-2,48*ctx->gui_scale,48*ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,1,1,1,1);
+  if (*value != 0) drawColorRect((x+12)*ctx->gui_scale,(y+12)*ctx->gui_scale,-3,40*ctx->gui_scale,40*ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,0,0,0,1);
+  if (x*ctx->gui_scale<ctx->mx&&ctx->mx<(x+64)*ctx->gui_scale&&y*ctx->gui_scale<ctx->my&&ctx->my<(y+64)*ctx->gui_scale) {
+    drawText(tooltip,ctx->mx+15*ctx->gui_scale,ctx->my+15*ctx->gui_scale,0,ctx->screenWidth,ctx->screenHeight,6*ctx->gui_scale,6*ctx->gui_scale);
     if (ctx->mb && !wasMouseClicked) {
       *value = !(*value);
     }
@@ -616,8 +580,10 @@ void checkbox(struct guictx * ctx, int x, int y, int * value, char * tooltip) {
   }
 }
 
-//
 void atlasedit(struct guictx * ctx, int x, int y, int w, int h, unsigned * nLayers, unsigned layer, unsigned color, unsigned ** data, unsigned * texture) {
+
+  kxguiLayoutFunc(ctx, &x, &y, w*16, h*16);
+  
   if (!(*texture)) {
     glGenTextures(1, texture);
     glBindTexture(GL_TEXTURE_2D_ARRAY, *texture);
@@ -647,14 +613,9 @@ void atlasedit(struct guictx * ctx, int x, int y, int w, int h, unsigned * nLaye
     *nLayers = newLayers;
   }
   glDisable(GL_DEPTH_TEST);
-  drawRect(x,y,w*16,h*16,ctx->screenWidth,ctx->screenHeight,0xFF000000);
-  drawTexturedRect(x,y,w*16,h*16,ctx->screenWidth,ctx->screenHeight,*texture,layer);
-  if (x < ctx->mx && ctx->mx < x+w*16 && y < ctx->my && ctx->my < y+h*16) {
-    int px = (ctx->mx - x) / 16;
-    int py = (ctx->my - y) / 16;
-    //char buffer[40];
-    //sprintf(buffer, "hi %d %d %08X", px, py, color);
-    //drawText(buffer,ctx->mx+15,ctx->my+15,ctx->scrw,ctx->scrh,6,6);
+  drawColorRect(x * ctx->gui_scale,y * ctx->gui_scale,(w*16) * ctx->gui_scale,0,(h*16) * ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,0,0,0,1);
+  drawTexturedRect(x * ctx->gui_scale,y * ctx->gui_scale,1,(w*16) * ctx->gui_scale,(h*16) * ctx->gui_scale,ctx->screenWidth,ctx->screenHeight,*texture,layer);
+  if (x * ctx->gui_scale < ctx->mx && ctx->mx < (x+w*16) * ctx->gui_scale && y * ctx->gui_scale < ctx->my && ctx->my < (y+h*16) * ctx->gui_scale) {
     if (ctx->mb) {
       int px = (ctx->mx - x) / 16;
       int py = (ctx->my - y) / 16;
@@ -664,35 +625,40 @@ void atlasedit(struct guictx * ctx, int x, int y, int w, int h, unsigned * nLaye
       glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, w, h, 1, GL_RGBA, GL_UNSIGNED_BYTE, *data + layer * w * h);
     }
   }
+  glEnable(GL_DEPTH_TEST);
 }
 
 bool button(struct guictx * ctx, int x, int y, char * label, char * tooltip) {
-  int w = strlen(label) * CHAR_W * ctx->textScaleX;
-  int h = CHAR_H * ctx->textScaleY;
-  drawRect(x, y, w, h, ctx->screenWidth, ctx->screenHeight,0xFF0000FF);
-  drawText(label, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
+  int w = strlen(label) * KXGUI_CHAR_W * ctx->textScaleX;
+  int h = KXGUI_CHAR_H * ctx->textScaleY;
+  drawColorRect(x, y, 0, w, h, ctx->screenWidth, ctx->screenHeight,0,0,1,1);
+  drawText(label, x, y, 0, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
   if (x < ctx->mx && ctx->mx < x+w && y < ctx->my && ctx->my < y+h) {
-    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
+    drawText(tooltip,ctx->mx+15,ctx->my+15,0,ctx->screenWidth,ctx->screenHeight,6,6);
     if ( ctx->mb ) {
-      drawRect(x, y, w, h, ctx->screenWidth, ctx->screenHeight,0xFFFFFFFF);
-      drawText(label, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
+      drawColorRect(x,y,0,w,h,ctx->screenWidth,ctx->screenHeight,1,1,1,1);
+      drawText(label,x,y,0,ctx->screenWidth,ctx->screenHeight,ctx->textScaleX,ctx->textScaleY);
       return true;
     }
     return false;
   }
 }
 
-bool button_once(struct guictx * ctx, int x, int y, char * label, char * tooltip) {
+static bool button_once(struct guictx * ctx, int x, int y, char * label, char * tooltip) {
+
+  kxguiLayoutFunc(ctx, &x, &y, strlen(label) * KXGUI_CHAR_W * ctx->textScaleX, KXGUI_CHAR_H * ctx->textScaleY);
+  
   static int wasMouseClickedOnPreviousFrame = 0;
-  int w = strlen(label) * CHAR_W * ctx->textScaleX;
-  int h = CHAR_H * ctx->textScaleY;
-  drawRect(x, y, w, h, ctx->screenWidth, ctx->screenHeight,0xFF0000FF);
-  drawText(label, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
-  if (x < ctx->mx && ctx->mx < x+w && y < ctx->my && ctx->my < y+h) {
-    drawText(tooltip,ctx->mx+15,ctx->my+15,ctx->screenWidth,ctx->screenHeight,6,6);
+  int w = strlen(label) * KXGUI_CHAR_W * ctx->textScaleX;
+  int h = KXGUI_CHAR_H * ctx->textScaleY;
+  drawColorRect(x * ctx->gui_scale, y * ctx->gui_scale, 0, w * ctx->gui_scale, h * ctx->gui_scale, ctx->screenWidth, ctx->screenHeight,0,0,1,1);
+  drawText(label, x * ctx->gui_scale, y * ctx->gui_scale,-1, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX * ctx->gui_scale, ctx->textScaleY * ctx->gui_scale);
+  if (x * ctx->gui_scale < ctx->mx && ctx->mx < (x+w) * ctx->gui_scale && y * ctx->gui_scale < ctx->my && ctx->my < (y+h) * ctx->gui_scale) {
+    drawColorRect(        ctx->mx+15,ctx->my+15,-10, strlen(tooltip) * KXGUI_CHAR_W * ctx->textScaleX * ctx->gui_scale, KXGUI_CHAR_H*ctx->textScaleX*ctx->gui_scale, ctx->screenWidth, ctx->screenHeight, 0,0,0,1);
+    drawText     (tooltip,ctx->mx+15*ctx->gui_scale,ctx->my+15 * ctx->gui_scale,-14,ctx->screenWidth,ctx->screenHeight,ctx->textScaleX * ctx->gui_scale,ctx->textScaleY * ctx->gui_scale);
     if ( ctx->mb ) {
-      drawRect(x, y, w, h, ctx->screenWidth, ctx->screenHeight,0xFFFFFFFF);
-      drawText(label, x, y, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX, ctx->textScaleY);
+      drawColorRect(x * ctx->gui_scale, y * ctx->gui_scale, -2, w * ctx->gui_scale, h * ctx->gui_scale, ctx->screenWidth, ctx->screenHeight,1,1,1,1);
+      drawText(label, x * ctx->gui_scale, y * ctx->gui_scale, -3, ctx->screenWidth, ctx->screenHeight, ctx->textScaleX * ctx->gui_scale, ctx->textScaleY * ctx->gui_scale);
       if (!wasMouseClickedOnPreviousFrame) {
         wasMouseClickedOnPreviousFrame = 1;
         return true;

@@ -44,10 +44,17 @@ typedef enum move {
     NORMAL
   } move_t;
 
+typedef struct {
+    GLuint vao, vbo, ebo, count;
+} opengl_mesh;
+
+opengl_mesh create_opengl_mesh(void * vertices, GLsizeiptr sizeOfVerticesInBytes, unsigned * indices, size_t numIndices, int nAttributes, ...);
+
 typedef struct player {
     fvec3 pos;
     fvec3 vel;
     double yaw;
+    unsigned longlegs;
     double pitch;
     move_t move;
     double gravity;
@@ -105,6 +112,7 @@ struct client {
     servertype serverType;
     unsigned shaders[5];
     player_t player;
+    struct chunk_queue meshing_queue;
 };
 
 typedef struct {

@@ -24,13 +24,13 @@ int checkCollision(fvec3 feetPos, double radius, double height, struct world * w
     for (int x = minX; x <= maxX; x++) {
         for (int y = minY; y <= maxY; y++) {
             for (int z = minZ; z <= maxZ; z++) {
-                if (getVoxelInWorld(*world, x, y, z)) return 1;
+                voxel vxl = getVoxelInWorld(*world, x, y, z);
+                if (vxl && vxl != 6) return 1;
             }
         }
     }
     return 0;
 }
-
 void resolveAxis(player_t * p, fvec3 * v, axis_t axis, struct world * world) {
     fvec3 newPos = p->pos;
     switch (axis) {
@@ -39,27 +39,41 @@ void resolveAxis(player_t * p, fvec3 * v, axis_t axis, struct world * world) {
         default    : newPos.z += v->z; break;
     }
     int collision = checkCollision(newPos, p->radius, p->height, world);
+    int step_up;
     if (collision) {
-        double centerPenetration, correctionAmount;
         switch (axis) {
             case X_AXIS:
-                centerPenetration = newPos.x - (int)(newPos.x);
-                correctionAmount = centerPenetration;// + p->radius;
-                newPos.x -= v->x;
-                v->x = 0;
+                step_up = 0;
+                for (int i = 1; i<p->longlegs+1; i++) {
+                    collision = checkCollision((fvec3){newPos.x,newPos.y+i,newPos.z}, p->radius, p->height, world);
+                    if (!collision) {
+                        step_up = i; break;
+                    }
+                }
+                if (!step_up) {
+                    newPos.x -= v->x;
+                    v->x = 0;  
+                } else
+                    newPos.y += step_up;
                 break;
             case Y_AXIS:
                 if (v->y < 0) p->onGround = 1;
-                centerPenetration = newPos.y - (int)(newPos.y);
-                correctionAmount = centerPenetration;// + p->radius;
                 newPos.y -= v->y;
                 v->y = 0;
                 break;
             case Z_AXIS:
-                centerPenetration = newPos.z - (int)(newPos.z);
-                correctionAmount = centerPenetration;// + p->radius;
-                newPos.z -= v->z;
-                v->z = 0;
+                step_up = 0;
+                for (int i = 1; i<p->longlegs+1; i++) {
+                    collision = checkCollision((fvec3){newPos.x,newPos.y+i,newPos.z}, p->radius, p->height, world);
+                    if (!collision) {
+                        step_up = i; break;
+                    }
+                }
+                if (!step_up) {
+                    newPos.z -= v->z;
+                    v->z = 0;
+                } else
+                    newPos.y += step_up;
                 break;
         }
     } else if (axis == Y_AXIS) {p->onGround = 0;}
@@ -87,7 +101,7 @@ void processPlayerMovement(player_t * player, double deltaTime) {
             hit.x == (int)player->pos.x &&
             hit.y == (int)player->pos.y &&
             hit.z == (int)player->pos.z) {} else // TODO : this is nasty
-            setVoxelInWorld(*player->world, hit.x, hit.y, hit.z, player->client->blockType);
+            setVoxelInWorld(player->world, hit.x, hit.y, hit.z, player->client->blockType, &player->client->meshing_queue);
         }
         gInput.keys[GLFW_KEY_R] = 0;
     }
@@ -96,9 +110,28 @@ void processPlayerMovement(player_t * player, double deltaTime) {
         ivec3 hit = {0,0,0};
         int hitfound = voxelRaycastHit(*player->world,(fvec3){ player->pos.x, player->pos.y+player->cameraHeight, player->pos.z}, player->yaw - M_PI * 0.5, player->pitch * -1, 5, &hit);
         if (hitfound) {
-            setVoxelInWorld(*player->world, hit.x, hit.y, hit.z, 0);
+            setVoxelInWorld(player->world, hit.x, hit.y, hit.z, 0, &player->client->meshing_queue);
         }
         gInput.keys[GLFW_KEY_E] = 0;
+    }
+    
+    if (gInput.keys[GLFW_KEY_Q])
+    {
+        ivec3 hit = {0,0,0};
+        int hitfound = voxelRaycastHit(*player->world,(fvec3){ player->pos.x, player->pos.y+player->cameraHeight, player->pos.z}, player->yaw - M_PI * 0.5, player->pitch * -1, 500, &hit);
+        if (hitfound) {
+
+            const int SPHERE_RADIUS = 20;
+            for (int x = hit.x - SPHERE_RADIUS; x < hit.x + (SPHERE_RADIUS * 2); x++) {
+                for (int y = hit.y - SPHERE_RADIUS; y < hit.y + (SPHERE_RADIUS * 2); y++) {
+                    for (int z = hit.z - SPHERE_RADIUS; z < hit.z + (SPHERE_RADIUS * 2); z++) {
+                        if ( sqrt((hit.x-x)*(hit.x-x)+(hit.y-y)*(hit.y-y)+(hit.z-z)*(hit.z-z)) < SPHERE_RADIUS ) setVoxelInWorld(player->world, x, y, z, player->client->blockType, &player->client->meshing_queue);
+                    }
+                } 
+            }
+            
+        }
+        gInput.keys[GLFW_KEY_Q] = 0;
     }
     
     // move

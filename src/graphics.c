@@ -5,6 +5,8 @@
 #include <GL/glew.h>
 #include "main.h"
 
+#include <stdarg.h>
+
 #define MAX_SHADER_LENGTH 4096
 
 static GLuint loadAndCompileShaderFromFile (GLenum type, char * filename) {
@@ -62,24 +64,25 @@ int drawThing(thing_t * thing) {
     glBindVertexArray(0);
 }
 
-GLuint createMesh(struct Vertex * vtcs, unsigned * idcs, unsigned nV, unsigned nI) {
-    GLuint VAO, VBO, EBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, nV * sizeof(struct Vertex), vtcs, GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, nI * sizeof(unsigned int), idcs, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_BYTE, GL_TRUE, sizeof(struct Vertex), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_BYTE, GL_TRUE, sizeof(struct Vertex), (void*) offsetof(struct Vertex, i));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(struct Vertex), (void*) offsetof(struct Vertex, u));
+opengl_mesh create_opengl_mesh(void * vertices, GLsizeiptr sizeOfVerticesInBytes, unsigned * indices, size_t numIndices, int nAttributes, ...) {
+    opengl_mesh m;
+    glGenVertexArrays(1, &m.vao);
+    glGenBuffers(1, &m.vbo);
+    glGenBuffers(1, &m.ebo);
+    glBindVertexArray(m.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, m.vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeOfVerticesInBytes, vertices, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, numIndices * sizeof(unsigned int), indices, GL_STATIC_DRAW);
+    va_list args;
+    va_start(args, nAttributes);
+    for (int i = 0; i < nAttributes; i++) {
+        glEnableVertexAttribArray(i);
+        glVertexAttribPointer(i, va_arg(args, GLint), va_arg(args, GLenum), va_arg(args, GLboolean), va_arg(args, GLsizei), va_arg(args, void*));
+    } 
+    va_end(args);
     glBindVertexArray(0);
-    return VAO;
+    return m;
 }
 
 GLuint createCubeMesh()  {
